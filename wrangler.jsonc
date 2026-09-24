@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "buildex-website",
+  "main": "cloudflare/forms-worker.mjs",
+  "compatibility_date": "2026-09-24",
+  "keep_vars": true,
+  "build": {
+    "command": "npm run build:public"
+  },
+  "assets": {
+    "directory": "./public-launch",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/admin", "/admin/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "buildex-production",
+      "database_id": "fbf4ff7d-f0f7-412c-9dd6-f690f5dd006f"
+    }
+  ],
+  "vars": {
+    "PUBLIC_ORIGIN": "https://buildexconstructions.com"
+  }
+}

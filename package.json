@@ -13,6 +13,7 @@
     "admin:create": "node --env-file-if-exists=.env scripts/admin-user.mjs",
     "backup": "node --env-file-if-exists=.env scripts/backup.mjs",
     "build:cloudflare": "node scripts/build-cloudflare.mjs",
-    "build:public": "node scripts/export-launch.mjs"
+    "build:public": "node scripts/export-launch.mjs",
+    "build:forms": "node scripts/build-forms.mjs"
   }
 }
