@@ -19,8 +19,16 @@
       "database_id": "fbf4ff7d-f0f7-412c-9dd6-f690f5dd006f"
     }
   ],
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "destination_address": "joy.divinetech@gmail.com",
+      "allowed_sender_addresses": ["inquiries@buildexconstructions.com"]
+    }
+  ],
   "vars": {
     "PUBLIC_ORIGIN": "https://buildexconstructions.com",
+    "NOTIFICATION_FROM": "inquiries@buildexconstructions.com",
     "NOTIFICATION_TO": "joy.divinetech@gmail.com",
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFCXGynoZ7lFbNJ5"
   }
