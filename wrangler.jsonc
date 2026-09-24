@@ -5,7 +5,7 @@
   "compatibility_date": "2026-09-24",
   "keep_vars": true,
   "build": {
-    "command": "npm run build:public"
+    "command": "npm run build:forms"
   },
   "assets": {
     "directory": "./public-launch",
@@ -20,6 +20,8 @@
     }
   ],
   "vars": {
-    "PUBLIC_ORIGIN": "https://buildexconstructions.com"
+    "PUBLIC_ORIGIN": "https://buildexconstructions.com",
+    "NOTIFICATION_TO": "joy.divinetech@gmail.com",
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAFCXGynoZ7lFbNJ5"
   }
 }
