@@ -3,16 +3,21 @@
  const form=document.querySelector('[data-online-form]');if(!form)return;
  const submit=form.querySelector('[type=submit]'),alert=form.querySelector('[role=alert]');
  const info=document.createElement('p');info.className='form-note';info.textContent='Preparing secure online inquiries…';form.prepend(info);
- const widget=document.createElement('div');widget.className='inquiry-verification';submit.before(widget);
+ const widget=document.createElement('div');widget.className='inquiry-verification';widget.setAttribute('aria-label','Security verification');submit.before(widget);
  const privacy=document.createElement('p');privacy.className='form-note';privacy.textContent='Your contact and project details will be used to respond to this inquiry.';widget.before(privacy);
  let widgetId,submissionId=crypto.randomUUID(),busy=false,ready=false,verified=false;
  const update=()=>{submit.disabled=busy||!ready||!verified;};update();
  function error(message){alert.textContent=message;alert.hidden=false;}
+ function verificationError(message='Security verification could not load. Refresh the page or call (346) 538-5357.'){
+  verified=false;update();error(message);
+ }
  async function setup(){try{
   const r=await fetch('/api/form-config',{signal:AbortSignal.timeout(8000)});if(!r.ok)throw Error();const config=await r.json();if(!config.enabled||!config.siteKey)throw Error();
-  await new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';script.async=true;script.onload=resolve;script.onerror=reject;document.head.append(script);});
-  window.turnstile.ready(()=>{widgetId=window.turnstile.render(widget,{sitekey:config.siteKey,action:'inquiry',size:'flexible',callback:()=>{verified=true;update();},'expired-callback':()=>{verified=false;update();},'error-callback':()=>{verified=false;update();error('Verification could not load. Please refresh or call us.');}});ready=true;info.textContent='Complete the fields below to send your inquiry securely.';update();});
- }catch{info.textContent='Online inquiries are temporarily unavailable. Please call or text (346) 538-5357.';}}
+  await new Promise((resolve,reject)=>{const script=document.createElement('script');const timer=setTimeout(()=>reject(Error('timeout')),10000);script.src='https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';script.async=true;script.onload=()=>{clearTimeout(timer);resolve();};script.onerror=()=>{clearTimeout(timer);reject(Error('load'));};document.head.append(script);});
+  if(!window.turnstile)throw Error('missing');
+  widgetId=window.turnstile.render(widget,{sitekey:config.siteKey,action:'inquiry',size:'flexible',retry:'auto','retry-interval':3000,callback:()=>{verified=true;alert.hidden=true;update();},'expired-callback':()=>{verified=false;update();},'timeout-callback':()=>verificationError('Security verification timed out. Please try again.'),'unsupported-callback':()=>verificationError('This browser cannot run security verification. Please call (346) 538-5357.'),'error-callback':()=>{verificationError();return true;}});
+  ready=true;info.textContent='Complete the security verification below, then send your inquiry.';update();
+ }catch{info.textContent='Online verification is unavailable.';verificationError();}}
  form.addEventListener('submit',async event=>{
   event.preventDefault();if(busy||!ready||!verified||!form.reportValidity())return;
   busy=true;update();alert.hidden=true;const original=submit.textContent;submit.textContent='Sending…';

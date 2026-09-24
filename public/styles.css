@@ -179,6 +179,7 @@ p{color:#536579}
 .field input:focus,.field textarea:focus{outline:2px solid #245b89;outline-offset:1px}
 .field textarea{resize:vertical}
 .form-note{font-size:11px;line-height:1.7;margin:0 0 20px}
+.inquiry-verification{min-height:65px;margin:0 0 14px}
 .honeypot{position:absolute;left:-9999px;opacity:0}
 .error{background:#fff0ed;color:#982c24;border:1px solid #eccac5;padding:13px;font-size:13px}
 .success{background:#edf3f9;padding:45px;border:1px solid #b8cadd}
