@@ -4,16 +4,19 @@ const reject=(status,message)=>{throw Object.assign(new Error(message),{status})
 const uuid=s=>typeof s==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
 const email=s=>typeof s==='string'&&s.length<=200&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 const field=(d,k,max,required=false)=>{const value=d[k];if(value!==undefined&&typeof value!=='string')reject(400,'Invalid form field.');const text=(value||'').trim();if(text.length>max||(required&&!text))reject(400,'Complete all required fields within the allowed length.');return text;};
-export async function notifyInquiry(env,id,fetcher=fetch){
+export async function notifyInquiry(env,id){
  const row=await env.DB.prepare('SELECT * FROM inquiry_notifications WHERE inquiry_id=?').bind(id).first();
  if(!row||row.status==='sent')return;
- if(!env.CLOUDFLARE_EMAIL_API_TOKEN||!env.CLOUDFLARE_ACCOUNT_ID||!env.NOTIFICATION_FROM||!env.NOTIFICATION_TO)return;
+ if(!env.EMAIL||!env.NOTIFICATION_FROM||!env.NOTIFICATION_TO)return;
  try{
   const data=JSON.parse(row.payload);
-  const res=await fetcher('https://api.cloudflare.com/client/v4/accounts/'+encodeURIComponent(env.CLOUDFLARE_ACCOUNT_ID)+'/email/sending/send',{method:'POST',headers:{Authorization:'Bearer '+env.CLOUDFLARE_EMAIL_API_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({from:env.NOTIFICATION_FROM,to:[env.NOTIFICATION_TO],subject:'Buildex: new '+data.kind+' inquiry',text:['Reference: '+id,'Name: '+data.name,'Email: '+data.email,'Phone: '+data.phone,'Service: '+data.service,...Object.entries(data.details).filter(([,v])=>v).map(([k,v])=>k+': '+v)].join('\n')}),signal:AbortSignal.timeout(8000)});
-  if(!res.ok)throw Error('delivery_failed');
-  const delivery=await res.json();
-  if(delivery.success!==true||![...(delivery.result?.delivered||[]),...(delivery.result?.queued||[])].includes(env.NOTIFICATION_TO))throw Error('delivery_failed');
+  await env.EMAIL.send({
+   from:{email:env.NOTIFICATION_FROM,name:'Buildex Website'},
+   to:env.NOTIFICATION_TO,
+   replyTo:data.email,
+   subject:'Buildex: new '+data.kind+' inquiry',
+   text:['Reference: '+id,'Name: '+data.name,'Email: '+data.email,'Phone: '+data.phone,'Service: '+data.service,...Object.entries(data.details).filter(([,v])=>v).map(([k,v])=>k+': '+v)].join('\n')
+  });
   await env.DB.prepare("UPDATE inquiry_notifications SET status='sent',attempts=attempts+1,last_attempt=? WHERE inquiry_id=?").bind(Date.now(),id).run();
  }catch{
   await env.DB.prepare("UPDATE inquiry_notifications SET status='pending',attempts=attempts+1,last_attempt=? WHERE inquiry_id=?").bind(Date.now(),id).run();
@@ -48,7 +51,7 @@ export async function handleInquiry(request,env,ctx={},fetcher=fetch){
    env.DB.prepare('INSERT INTO inquiries VALUES(?,?,?,?,?,?,?,?)').bind(id,data.kind,data.name,data.phone,data.email,data.service,JSON.stringify(data.details),now),
    env.DB.prepare('INSERT INTO inquiry_notifications(inquiry_id,fingerprint,payload,status,attempts,last_attempt) VALUES(?,?,?,?,0,NULL)').bind(id,fingerprint,JSON.stringify(data),'pending')
   ]);
-  if(ctx.waitUntil)ctx.waitUntil(notifyInquiry(env,id,fetcher).catch(()=>{}));
+  if(ctx.waitUntil)ctx.waitUntil(notifyInquiry(env,id).catch(()=>{}));
   return response({ok:true,id},201);
  }catch(error){return response({error:error.status?error.message:'Unable to save your inquiry. Please try again or call us.'},error.status||500);}
 }
