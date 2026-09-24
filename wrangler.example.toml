@@ -1,0 +1,19 @@
+name = "buildex"
+compatibility_date = "2026-09-16"
+pages_build_output_dir = "./cloudflare-dist"
+
+[vars]
+PUBLIC_ORIGIN = "https://www.example.com"
+ADMIN_ORIGIN = "https://admin.example.com"
+ACCESS_ISSUER = "https://YOUR-TEAM.cloudflareaccess.com"
+ACCESS_AUD = "REPLACE_WITH_ACCESS_APPLICATION_AUDIENCE"
+ADMIN_EMAILS = "REPLACE_WITH_APPROVED_ADMIN_EMAIL"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "buildex-cms"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "buildex-private-media"

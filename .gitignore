@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+data/
+node_modules/
+*.log
+coverage/
+backups/
+preview/
+cloudflare-dist/
+wrangler.toml
+.dev.vars
+.wrangler/
+
+public-launch/

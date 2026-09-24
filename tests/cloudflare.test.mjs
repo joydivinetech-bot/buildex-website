@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {readFile} from 'node:fs/promises';
+import {verifyAccess} from '../cloudflare/access.mjs';
+import {handle} from '../cloudflare/worker.mjs';
+
+test('Cloudflare CMS: signed Access identity, drafts, photos, publishing and origin isolation',async()=>{
+ const db=new DatabaseSync(':memory:');db.exec(await readFile(new URL('../cloudflare/schema.sql',import.meta.url),'utf8'));
+ const keys=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
+ const jwk=await crypto.subtle.exportKey('jwk',keys.publicKey);jwk.kid='test';
+ const env={PUBLIC_ORIGIN:'https://www.example.com',ADMIN_ORIGIN:'https://admin.example.com',ACCESS_ISSUER:'https://buildex-test.cloudflareaccess.com',ACCESS_AUD:'test-audience',ADMIN_EMAILS:'owner@example.com'};
+ const encode=s=>Buffer.from(typeof s==='string'?s:JSON.stringify(s)).toString('base64url');
+ async function token(overrides={}){const h=encode({alg:'RS256',kid:'test'}),p=encode({iss:env.ACCESS_ISSUER,aud:[env.ACCESS_AUD],email:'owner@example.com',iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+300,...overrides});const signature=await crypto.subtle.sign('RSASSA-PKCS1-v1_5',keys.privateKey,new TextEncoder().encode(h+'.'+p));return h+'.'+p+'.'+Buffer.from(signature).toString('base64url');}
+ const jwt=await token();const headers={'Cf-Access-Jwt-Assertion':jwt};
+ assert.equal((await verifyAccess(new Request(env.ADMIN_ORIGIN,{headers}),env,async()=>Response.json({keys:[jwk]}))).email,'owner@example.com');
+ for(const claims of [{aud:['wrong']},{email:'intruder@example.com'},{exp:1}])await assert.rejects(verifyAccess(new Request(env.ADMIN_ORIGIN,{headers:{'Cf-Access-Jwt-Assertion':await token(claims)}}),env));
+ await assert.rejects(verifyAccess(new Request(env.ADMIN_ORIGIN,{headers:{'Cf-Access-Jwt-Assertion':jwt.slice(0,-8)+'aaaaaaaa'}}),env));
+ const prepare=sql=>{let args=[];const statement={bind(...a){args=a;return statement;},async first(){return db.prepare(sql).get(...args)||null;},async all(){return {results:db.prepare(sql).all(...args)};},async run(){return db.prepare(sql).run(...args);}};return statement;};
+ env.DB={prepare,async batch(statements){db.exec('BEGIN');try{const values=[];for(const s of statements)values.push(await s.run());db.exec('COMMIT');return values;}catch(e){db.exec('ROLLBACK');throw e;}}};
+ const objects=new Map();env.MEDIA={async put(k,v){objects.set(k,v);},async get(k){const data=objects.get(k);return data?{body:data,size:data.length}:null;},async delete(keys){for(const k of Array.isArray(keys)?keys:[keys])objects.delete(k);}};env.ASSETS={fetch:async()=>new Response('asset')};
+ const req=(route,{admin=false,data,origin,method}={})=>new Request((admin?env.ADMIN_ORIGIN:env.PUBLIC_ORIGIN)+route,{method:method||(data?'POST':'GET'),headers:{...(admin?headers:{}),...(data?{'Content-Type':'application/json',Origin:origin||(admin?env.ADMIN_ORIGIN:env.PUBLIC_ORIGIN)}:{})},body:data?JSON.stringify(data):undefined});
+ assert.equal((await handle(req('/api/admin'),env)).status,404);
+ assert.equal((await handle(new Request(env.ADMIN_ORIGIN+'/api/admin'),env)).status,401);
+ assert.equal((await handle(req('/admin.html'),env)).status,404);
+ assert.equal((await handle(req('/api/admin',{admin:true,data:{action:'save'},origin:'https://evil.example'}),env)).status,403);
+ const form=new FormData();form.set('photo',new File([Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aStsAAAAASUVORK5CYII=','base64')],'test.png',{type:'image/png'}));
+ const upload=await handle(new Request(env.ADMIN_ORIGIN+'/api/admin?action=upload',{method:'POST',headers:{...headers,Origin:env.ADMIN_ORIGIN},body:form}),env);assert.equal(upload.status,201);const photo=await upload.json();
+ const project={name:'Test project',category:'Patios',location:'Stafford',description:'Test',photos:[photo],status:'draft'};
+ const saved=await handle(req('/api/admin',{admin:true,data:{action:'save',project}}),env);assert.equal(saved.status,200);project.id=(await saved.json()).id;
+ assert.equal((await (await handle(req('/api/projects'),env)).json()).length,0);
+ assert.equal((await handle(req('/api/media?key='+photo.key),env)).status,404);
+ assert.equal((await handle(req('/api/media?key='+photo.key,{admin:true}),env)).status,200);
+ project.status='published';assert.equal((await handle(req('/api/admin',{admin:true,data:{action:'save',project}}),env)).status,200);
+ assert.equal((await (await handle(req('/api/projects'),env)).json()).length,1);
+ assert.equal((await handle(req('/api/media?key='+photo.key),env)).status,200);
+ project.status='draft';await handle(req('/api/admin',{admin:true,data:{action:'save',project}}),env);assert.equal((await handle(req('/api/media?key='+photo.key),env)).status,404);
+ assert.equal((await handle(req('/api/admin',{admin:true,data:{action:'reorder',ids:[project.id]}}),env)).status,200);
+ assert.equal((await handle(req('/api/admin',{admin:true,data:{action:'delete',id:project.id}}),env)).status,200);assert.equal(objects.size,0);
+ db.close();
+});
