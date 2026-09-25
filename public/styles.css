@@ -175,6 +175,7 @@ p{color:#536579}
 .inquiry-form h2{font-size:18px;letter-spacing:0;margin:28px 0 22px}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 .field{display:flex;flex-direction:column;gap:8px;font-size:12px;font-weight:600;margin-bottom:20px}
+.optional-label{display:inline;font-size:10px;font-weight:400;color:#718096;margin-left:4px}
 .field input,.field textarea,.form-select{width:100%!important;min-height:47px!important;background:#fbfcfe;border:1px solid #d5e0eb;border-radius:3px!important;padding:12px!important;font-size:14px;font-weight:400;color:#0b2948}
 .field input:focus,.field textarea:focus{outline:2px solid #245b89;outline-offset:1px}
 .field textarea{resize:vertical}
@@ -600,3 +601,12 @@ p{color:#536579}
 @media(prefers-reduced-motion:no-preference) and (max-width:900px){.menu-ready .nav.menu-open nav a:nth-child(7){animation-delay:.21s}}
 /* Slightly larger desktop navigation labels. */
 @media(min-width:901px){.nav nav{font-size:13px}}
+/* Consistent boxed dropdowns across public forms and dashboards. */
+select{appearance:none;-webkit-appearance:none;background-color:#fff!important;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%230b2948' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:right 14px center!important;background-size:16px!important;border:1px solid #b8cadd!important;border-radius:4px!important;min-height:50px;padding-right:44px!important;color:#0b2948;cursor:pointer;box-shadow:0 1px 2px #0b29480a}
+select:hover{border-color:#7892aa!important}
+select:focus-visible{outline:2px solid #245b89;outline-offset:2px}
+/* Premium single-family hero typography with a restrained accent line. */
+.page-index .hero h1.hero-title{font-family:Georgia,'Times New Roman',serif;font-size:clamp(58px,6.2vw,92px);font-weight:400;line-height:.98;letter-spacing:-3px;max-width:760px;margin-bottom:30px;text-wrap:balance}
+.hero-title-line{display:block}
+.page-index .hero .hero-title-accent{color:#c4def5;margin-left:clamp(0px,2.5vw,38px)}
+@media(max-width:600px){.page-index .hero h1.hero-title{font-size:clamp(47px,13vw,66px);line-height:1;letter-spacing:-2px}.page-index .hero .hero-title-accent{margin-left:0}}

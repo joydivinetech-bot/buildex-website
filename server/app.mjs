@@ -58,9 +58,9 @@ export async function createApp({dataDir=path.join(root,'data'),origin='http://1
       if(route==='/api/inquiries'&&req.method==='POST'){
         rate('inquiry:'+ip,10);const data=await jsonBody(req);if(data.website)fail(400,'Request could not be submitted.');
         const name=string(data.name,150),phone=string(data.phone,30),email=string(data.email),service=string(data.service),kind=string(data.kind),description=string(data.description,5000);
-        if(!name||phone.replace(/\D/g,'').length<7||!emailValid(email)||!service||!description||!['estimate','contact'].includes(kind))fail(400,'Complete your name, phone, email, service and project description.');
+        if(!name||phone.replace(/\D/g,'').length<7||(email&&!emailValid(email))||!service||!['estimate','contact'].includes(kind))fail(400,'Complete your name, phone and service.');
         const details={description,address:string(data.address,500),propertyType:string(data.propertyType),size:string(data.size),startDate:string(data.startDate),budget:string(data.budget)};
-        if(kind==='estimate'&&(!details.address||!['Residential','Commercial'].includes(details.propertyType)))fail(400,'Include a property address and property type.');
+        if(kind==='estimate'&&!['Residential','Commercial'].includes(details.propertyType))fail(400,'Include the property type.');
         const id=randomUUID();db.prepare('INSERT INTO inquiries VALUES(?,?,?,?,?,?,?,?)').run(id,kind,name,phone,email,service,JSON.stringify(details),Date.now());return send(201,{ok:true,id});
       }
       if(route==='/api/media'&&['GET','HEAD'].includes(req.method)){

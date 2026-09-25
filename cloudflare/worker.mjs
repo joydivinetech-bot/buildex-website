@@ -33,8 +33,8 @@ export async function handle(request,env){
   if(route==='/api/inquiries'&&request.method==='POST'){
    if(url.origin!==env.PUBLIC_ORIGIN)fail(403,'Use the public website.');
    await rate('inquiry:'+(request.headers.get('CF-Connecting-IP')||'unknown'),10,900000);const d=await body(request);
-   if(d.website||!str(d.name,150)||str(d.phone,30).replace(/\D/g,'').length<7||!validEmail(str(d.email))||!str(d.service)||!str(d.description,5000)||!['estimate','contact'].includes(d.kind))fail(400,'Complete the required fields.');
-   if(d.kind==='estimate'&&(!str(d.address,500)||!['Residential','Commercial'].includes(d.propertyType)))fail(400,'Include a property address and type.');
+   if(d.website||!str(d.name,150)||str(d.phone,30).replace(/\D/g,'').length<7||(str(d.email)&&!validEmail(str(d.email)))||!str(d.service)||!['estimate','contact'].includes(d.kind))fail(400,'Complete the required fields.');
+   if(d.kind==='estimate'&&!['Residential','Commercial'].includes(d.propertyType))fail(400,'Include the property type.');
    const details=Object.fromEntries(['description','address','propertyType','size','startDate','budget'].map(k=>[k,str(d[k],k==='description'?5000:500)]));
    const id=crypto.randomUUID();await query('INSERT INTO inquiries VALUES(?,?,?,?,?,?,?,?)',id,d.kind,str(d.name,150),str(d.phone,30),str(d.email),str(d.service),JSON.stringify(details),Date.now()).run();return json({ok:true,id},201);
   }
