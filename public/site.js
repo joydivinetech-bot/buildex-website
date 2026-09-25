@@ -37,20 +37,18 @@ if (form) {
 
 }
 const contact = document.querySelector('.contact-details');
-if (contact && onWeb) request('/settings').then(settings => {
-  const values = [settings.phone, settings.email, settings.hours];
-  [...contact.children].slice(0, 3).forEach((row, i) => {
-    if (!values[i]) return;
-    const span = row.querySelector('span'); const label = span.querySelector('small');
-    if (i === 0) { const extra = span.querySelector('.additional-phones'); const link = text('a', values[i]); link.href = 'tel:' + values[i].replace(/[^+\d]/g, ''); span.replaceChildren(label, link); if (extra) span.append(extra); } else span.replaceChildren(label, document.createTextNode(values[i]));
-  });
-  const sample = !settings.email || settings.email.endsWith('example.com') || !settings.phone || settings.phone.includes('555-0148');
-  const notice = document.querySelector('.sample-notice'); if (notice) notice.hidden = !sample;
-  if (settings.phone && !settings.phone.includes('555-0148')) {
-    const actions = contact.nextElementSibling;
-    const phone = settings.phone.replace(/[^+\d]/g, '');
-    actions.replaceChildren();
-    for (const [scheme, label] of [['tel', 'Call us'], ['sms', 'Text us']]) { const a = text('a', label, 'button'); a.href = `${scheme}:${phone}`; actions.append(a); }
+if (onWeb) request('/settings').then(settings => {
+  const primary=settings.primaryPhone||settings.phone,secondary=settings.secondaryPhone;
+  const hero=document.querySelector('.hero-content');
+  if(hero){const eyebrow=hero.querySelector(':scope > .eyebrow'),lines=hero.querySelectorAll('.hero-title-line'),description=hero.querySelector(':scope > p');if(eyebrow&&settings.heroEyebrow)eyebrow.lastChild.textContent=' '+settings.heroEyebrow;if(lines[0]&&settings.heroTitleLine1)lines[0].textContent=settings.heroTitleLine1;if(lines[1]&&settings.heroTitleLine2)lines[1].textContent=settings.heroTitleLine2;if(description&&settings.heroDescription){description.replaceChildren(...settings.heroDescription.split('\n').flatMap((line,index)=>index?[document.createElement('br'),document.createTextNode(line)]:[document.createTextNode(line)]));}}
+  const topbar=document.querySelector('.topbar span');if(topbar&&settings.serviceArea)topbar.lastChild.textContent=' Proudly serving '+settings.serviceArea+' & surrounding areas';
+  if(contact){
+    const rows=[...contact.children],phoneRow=rows[0]?.querySelector('span'),emailRow=rows.find(row=>row.querySelector('.lucide-mail'))?.querySelector('span'),hoursRow=rows.find(row=>row.querySelector('.lucide-clock'))?.querySelector('span'),addressRow=rows.find(row=>row.querySelector('.lucide-map-pin'))?.querySelector('span');
+    if(phoneRow&&primary){const label=phoneRow.querySelector('small'),link=text('a',primary);link.href='tel:'+primary.replace(/[^+\d]/g,'');phoneRow.replaceChildren(label,link);if(secondary){const extra=text('span','','additional-phones'),second=text('a',secondary);second.href='tel:'+secondary.replace(/[^+\d]/g,'');extra.append(second);phoneRow.append(extra);}}
+    if(emailRow&&settings.email){const label=emailRow.querySelector('small'),link=text('a',settings.email);link.href='mailto:'+settings.email;emailRow.replaceChildren(label,link);}
+    if(hoursRow&&settings.hours){const label=hoursRow.querySelector('small');hoursRow.replaceChildren(label,document.createTextNode(settings.hours));}
+    if(addressRow&&settings.serviceArea){const label=addressRow.querySelector('small'),link=text('a',settings.serviceArea);link.href='https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(settings.serviceArea);link.target='_blank';link.rel='noopener';addressRow.replaceChildren(label,link);}
+    if(primary){const actions=contact.nextElementSibling,phone=primary.replace(/[^+\d]/g,'');if(actions){actions.replaceChildren();for(const [scheme,label] of [['tel','Call us'],['sms','Text us']]){const link=text('a',label,'button');link.href=scheme+':'+phone;actions.append(link);}}}
   }
 }).catch(() => {});
 const results = document.querySelector('#project-results');
