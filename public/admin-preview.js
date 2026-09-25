@@ -9,5 +9,6 @@ function apply(settings){
  const footer=[...document.querySelectorAll('.footer p')].find(node=>node.textContent.includes('Residential'));if(footer&&settings.serviceArea)footer.innerHTML='Residential &amp; commercial construction<br>'+settings.serviceArea.replace(/[&<>]/g,value=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[value]));
 }
 addEventListener('message',event=>{if(event.origin!==location.origin||event.source!==parent||event.data?.type!=='buildex-preview')return;apply(event.data.settings||{});});
-document.addEventListener('click',event=>{const link=event.target.closest('a');if(link&&!link.closest('.hero'))event.preventDefault();});
-const banner=text('div','PRIVATE PREVIEW · CHANGES ARE NOT PUBLISHED','preview-only-banner');document.body.prepend(banner);parent.postMessage({type:'buildex-preview-ready'},location.origin);
+document.addEventListener('click',event=>{if(event.target.closest('a'))event.preventDefault();});
+document.addEventListener('submit',event=>{event.preventDefault();event.stopImmediatePropagation();},true);
+parent.postMessage({type:'buildex-preview-ready'},location.origin);

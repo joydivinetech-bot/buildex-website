@@ -37,7 +37,7 @@ if (form) {
 
 }
 const contact = document.querySelector('.contact-details');
-if (onWeb) request('/settings').then(settings => {
+if (onWeb && !document.body.dataset.adminPreview) request('/settings').then(settings => {
   const primary=settings.primaryPhone||settings.phone,secondary=settings.secondaryPhone;
   const hero=document.querySelector('.hero-content');
   if(hero){const eyebrow=hero.querySelector(':scope > .eyebrow'),lines=hero.querySelectorAll('.hero-title-line'),description=hero.querySelector(':scope > p');if(eyebrow&&settings.heroEyebrow)eyebrow.lastChild.textContent=' '+settings.heroEyebrow;if(lines[0]&&settings.heroTitleLine1)lines[0].textContent=settings.heroTitleLine1;if(lines[1]&&settings.heroTitleLine2)lines[1].textContent=settings.heroTitleLine2;if(description&&settings.heroDescription){description.replaceChildren(...settings.heroDescription.split('\n').flatMap((line,index)=>index?[document.createElement('br'),document.createTextNode(line)]:[document.createTextNode(line)]));}}
