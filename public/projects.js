@@ -17,6 +17,7 @@
  function move(delta){current=(current+delta+filtered.length)%filtered.length;display();}
  document.querySelector('#media-prev').addEventListener('click',()=>move(-1));document.querySelector('#media-next').addEventListener('click',()=>move(1));dialog.addEventListener('keydown',event=>{if(event.target.tagName==='VIDEO')return;if(event.key==='ArrowRight'){event.preventDefault();move(1);}if(event.key==='ArrowLeft'){event.preventDefault();move(-1);}});dialog.addEventListener('click',e=>{if(e.target!==dialog)return;const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close();});
  async function loadPhotos(){
+  if(document.body.dataset.adminPreview){items=[];filtered=items;render();return;}
   if(document.body.dataset.preview||location.protocol==='file:'){render();return;}
   grid.textContent='Loading project photos…';
   try{const response=await fetch('/api/projects',{signal:AbortSignal.timeout(8000)});if(!response.ok)throw new Error();const projects=await response.json();
