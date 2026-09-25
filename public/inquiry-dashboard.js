@@ -17,7 +17,7 @@ function render(){
 }
 let challenge='';
 function showLogin(message='Sign in to view customer inquiries.'){inquiries=[];$('#dashboard').hidden=true;$('#sign-out').hidden=true;$('#login').hidden=false;$('#account').textContent=message;}
-function showDashboard(email){$('#login').hidden=true;$('#sign-out').hidden=false;$('#account').textContent='Signed in as '+email;}
+function showDashboard(email){$('#login').hidden=true;$('#dashboard').hidden=false;$('#sign-out').hidden=false;$('#account').textContent='Signed in as '+email;}
 async function load(showMessage=false){try{const data=await api('/admin/api/inquiries');inquiries=data.inquiries;showDashboard(data.user.email);render();if(showMessage)notice('Inbox refreshed.');}catch(error){showLogin();if(error.message!=='Please sign in to continue.'&&error.message!=='Your session has expired. Please sign in again.')notice(error.message,true);}}
 async function sendCode(){const button=$('#send-code'),resend=$('#resend-code');button.disabled=true;resend.disabled=true;try{const data=await api('/admin/api/auth/request-code',{method:'POST',body:'{}'});challenge=data.challenge;$('#code-form').hidden=false;$('#login-code').value='';$('#login-code').focus();notice('A six-digit code was sent to '+data.destination+'.');}catch(error){notice(error.message,true);}finally{button.disabled=false;resend.disabled=false;}}
 async function verifyCode(event){event.preventDefault();const code=$('#login-code').value.trim();try{const data=await api('/admin/api/auth/verify',{method:'POST',body:JSON.stringify({challenge,code})});showDashboard(data.user.email);notice('Signed in successfully.');await load();}catch(error){notice(error.message,true);}}
