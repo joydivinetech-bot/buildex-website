@@ -28,6 +28,8 @@
   ],
   "vars": {
     "PUBLIC_ORIGIN": "https://buildexconstructions.com",
+    "ADMIN_ORIGIN": "https://buildexconstructions.com",
+    "ADMIN_EMAILS": "joy.divinetech@gmail.com",
     "NOTIFICATION_FROM": "inquiries@buildexconstructions.com",
     "NOTIFICATION_TO": "joy.divinetech@gmail.com",
     "TURNSTILE_SITE_KEY": "0x4AAAAAAFCXGynoZ7lFbNJ5"

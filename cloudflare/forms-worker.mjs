@@ -1,3 +1,6 @@
 // This deployment exposes only inquiry endpoints; CMS/admin remain offline.
 import {handleInquiry} from './inquiries.mjs';
-export default {async fetch(request,env,ctx){const path=new URL(request.url).pathname;if(path==='/api/inquiries'||path==='/api/form-config')return handleInquiry(request,env,ctx);if(path.startsWith('/api/')||path.startsWith('/admin'))return new Response('Not found',{status:404});return env.ASSETS.fetch(request);}};
+import {handleInquiryAdmin} from './inquiry-admin.mjs';
+import {verifyAccess} from './access.mjs';
+const secure=response=>{const headers=new Headers(response.headers);headers.set('Cache-Control','private, no-store');headers.set('X-Content-Type-Options','nosniff');headers.set('X-Frame-Options','DENY');headers.set('Referrer-Policy','no-referrer');return new Response(response.body,{status:response.status,headers});};
+export default {async fetch(request,env,ctx){const url=new URL(request.url),path=url.pathname;if(path==='/api/inquiries'||path==='/api/form-config')return handleInquiry(request,env,ctx);if(path.startsWith('/admin/api/'))return handleInquiryAdmin(request,env);if(path==='/admin'||path==='/admin/'||path.startsWith('/admin/')){try{await verifyAccess(request,env);if(path==='/admin'||path==='/admin/')url.pathname='/admin/dashboard.html';return secure(await env.ASSETS.fetch(new Request(url,request)));}catch(error){return secure(Response.json({error:error.message},{status:error.status||500}));}}if(path.startsWith('/api/'))return new Response('Not found',{status:404});return env.ASSETS.fetch(request);}};

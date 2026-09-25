@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow">
+<title>Inquiry dashboard | Buildex Construction</title>
+<link rel="icon" type="image/png" href="/buildex-logo.png"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/admin/dashboard.css"><script src="/admin/dashboard.js" defer></script>
+</head>
+<body class="inquiry-admin-page">
+<header class="inquiry-admin-header"><div class="wrap"><a href="/" class="brand" aria-label="Buildex home"><img src="/buildex-logo.png" alt="Buildex Construction" width="84" height="84"></a><div><a href="/">View website ↗</a><a href="/cdn-cgi/access/logout">Sign out</a></div></div></header>
+<main class="wrap inquiry-admin-main">
+<span class="eyebrow">BUILDEX CONSTRUCTION LLC</span><h1>Inquiry dashboard</h1><p id="account" class="account-line">Checking administrator access…</p><p id="notice" class="dashboard-notice" role="status" hidden></p>
+<section id="dashboard" hidden>
+ <div id="summary" class="inquiry-summary" aria-label="Inquiry summary"></div>
+ <section class="inquiry-controls" aria-label="Filter inquiries"><label>Search<input id="search" type="search" placeholder="Name, phone, email, service…"></label><label>Status<select id="status-filter"><option value="all">All statuses</option><option value="new">New</option><option value="contacted">Contacted</option><option value="closed">Closed</option></select></label><button id="refresh" class="button secondary" type="button">Refresh</button><a class="button" href="/admin/api/inquiries.csv">Export CSV</a></section>
+ <p id="result-count" class="result-count" role="status"></p><div id="inquiry-list" class="inquiry-list"></div>
+</section>
+<noscript><p>Enable JavaScript to use the inquiry dashboard.</p></noscript>
+</main>
+</body></html>
