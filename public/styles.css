@@ -608,4 +608,5 @@ select:focus-visible{outline:2px solid #245b89;outline-offset:2px}
 .page-index .hero h1.hero-title{font-family:Georgia,'Times New Roman',serif;font-size:clamp(58px,6.2vw,92px);font-weight:400;line-height:.98;letter-spacing:-3px;max-width:760px;margin-bottom:30px;text-wrap:balance}
 .hero-title-line{display:block}
 .page-index .hero .hero-title-accent{color:#fff;margin-left:clamp(0px,2.5vw,38px)}
+.preview-only-banner{position:relative;z-index:1000;background:#c79a43;color:#071b31;text-align:center;padding:9px 12px;font:700 10px Arial,sans-serif;letter-spacing:1.4px}
 @media(max-width:600px){.page-index .hero h1.hero-title{font-size:clamp(47px,13vw,66px);line-height:1;letter-spacing:-2px}.page-index .hero .hero-title-accent{margin-left:0}}
