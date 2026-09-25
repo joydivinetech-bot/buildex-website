@@ -1,6 +1,6 @@
 import {verifyAccess} from './access.mjs';
 const categories=['Flooring','Patios','Outdoor Kitchens','Concrete','Remodeling','Handyman','MEP','Other'];
-const defaults={phone:'(346) 538-5357',email:'hello@buildex.example.com',hours:'Mon–Fri, 8 am–6 pm · Sat, 9 am–2 pm'};
+const defaults={phone:'(832) 743-5009',email:'hello@buildex.example.com',hours:'Mon–Fri, 8 am–6 pm · Sat, 9 am–2 pm'};
 const fail=(status,message)=>{throw Object.assign(new Error(message),{status});};
 const str=(v,max=200)=>typeof v==='string'?v.trim().slice(0,max):'';
 const validEmail=s=>/^\S+@\S+\.\S+$/.test(s);

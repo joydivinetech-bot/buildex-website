@@ -8,7 +8,7 @@ for(const file of [...pages.map(p=>p+'.html'),'styles.css','site.js','projects.c
  if(file.endsWith('.png')){await copyFile(path.join(root,'public',file),path.join(out,file));continue;}
  let s=await readFile(path.join(root,'public',file),'utf8');
  if(file.endsWith('.html')){
- s=s.replace(/<form\b[^>]*data-inquiry=[\s\S]*?<\/form>/g,'<section class="inquiry-form"><span class="eyebrow">LET’S TALK ABOUT YOUR PROJECT</span><h2>Request your free estimate</h2><p>Call or text our team to discuss your ideas, location and preferred timeline.</p><div class="actions"><a class="button" href="tel:+13465385357">Call (346) 538-5357</a><a class="text-link" href="sms:+13465385357">Text us ↗</a></div><p style="margin-top:24px">You can also reach us at <a href="tel:+18322311684">(832) 231-1684</a> or <a href="tel:+18327435009">(832) 743-5009</a>.</p></section>');
+ s=s.replace(/<form\b[^>]*data-inquiry=[\s\S]*?<\/form>/g,'<section class="inquiry-form"><span class="eyebrow">LET’S TALK ABOUT YOUR PROJECT</span><h2>Request your free estimate</h2><p>Call or text our team to discuss your ideas, location and preferred timeline.</p><div class="actions"><a class="button" href="tel:+18327435009">Call (832) 743-5009</a><a class="text-link" href="sms:+18327435009">Text us ↗</a></div><p style="margin-top:24px">You can also reach us at <a href="tel:+18322311684">(832) 231-1684</a>.</p></section>');
  s=s.replace(/<p class="sample-notice">[\s\S]*?<\/p>/g,'');
  s=s.replace(/<div>\s*<svg[^>]*class="lucide lucide-(?:mail|clock)"[\s\S]*?<\/div>/g,'');
  s=s.replace('</head>',`<link rel="canonical" href="https://buildexconstructions.com/${file==='index.html'?'':file}"></head>`);

@@ -5,7 +5,7 @@ import { randomBytes, scrypt as scryptCallback, timingSafeEqual, createHash } fr
 import { promisify } from 'node:util';
 const scrypt = promisify(scryptCallback);
 export const categories = ['Flooring','Patios','Outdoor Kitchens','Concrete','Remodeling','Handyman','MEP','Other'];
-export const defaults = {phone:'(346) 538-5357',email:'hello@buildex.example.com',hours:'Mon–Fri, 8 am–6 pm · Sat, 9 am–2 pm'};
+export const defaults = {phone:'(832) 743-5009',email:'hello@buildex.example.com',hours:'Mon–Fri, 8 am–6 pm · Sat, 9 am–2 pm'};
 export function openStore(directory) {
   mkdirSync(directory, {recursive:true});
   mkdirSync(path.join(directory,'uploads'), {recursive:true});
