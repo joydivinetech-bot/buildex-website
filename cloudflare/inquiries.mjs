@@ -7,7 +7,7 @@ const field=(d,k,max,required=false)=>{const value=d[k];if(value!==undefined&&ty
 const escapeHtml=value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 function notificationMessage(data,id){
  const title=data.kind==='estimate'?'New estimate inquiry':'New contact inquiry';
- const fields=[['Name',data.name],['Email',data.email],['Phone',data.phone],['Service',data.service],['Property address',data.details.address],['Property type',data.details.propertyType],['Project size',data.details.size],['Desired start date',data.details.startDate],['Budget',data.details.budget]].filter(([,value])=>value);
+ const fields=[['Name',data.name],['Email',data.email],['Phone',data.phone],['Service',data.service],['Property address',data.details.address],['Property type',data.details.propertyType],['Project size',data.details.size],['Project timeline',data.details.startDate],['Budget',data.details.budget]].filter(([,value])=>value);
  const text=[title,'','Reference: '+id,...fields.map(([label,value])=>label+': '+value),'',data.kind==='estimate'?'Project description':'Message',data.details.description].join('\n');
  const rows=fields.map(([label,value])=>`<tr><td style="padding:9px 12px;color:#64748b;font-size:13px;border-bottom:1px solid #e8edf3;width:34%;vertical-align:top">${escapeHtml(label)}</td><td style="padding:9px 12px;color:#102a43;font-size:14px;font-weight:600;border-bottom:1px solid #e8edf3;vertical-align:top">${escapeHtml(value)}</td></tr>`).join('');
  const reply='mailto:'+encodeURIComponent(data.email),call='tel:'+data.phone.replace(/[^\d+]/g,'');

@@ -23,7 +23,7 @@ export async function handleInquiryAdmin(request,env,authorizer=verifyAdminSessi
   if(url.pathname==='/admin/api/session'&&request.method==='GET')return json({user});
   if(url.pathname==='/admin/api/inquiries.csv'&&request.method==='GET'){
    const rows=(await env.DB.prepare("SELECT i.*,COALESCE(m.status,'new') status,m.updated_at status_updated_at FROM inquiries i LEFT JOIN inquiry_management m ON m.inquiry_id=i.id ORDER BY i.created_at DESC LIMIT 2000").all()).results.map(parseInquiry);
-   const columns=['Submitted','Status','Type','Name','Email','Phone','Service','Address','Property type','Project size','Desired start','Budget','Description','Reference'];
+   const columns=['Submitted','Status','Type','Name','Email','Phone','Service','Address','Property type','Project size','Project timeline','Budget','Description','Reference'];
    const records=rows.map(i=>[new Date(i.created_at).toISOString(),i.status,i.kind,i.name,i.email,i.phone,i.service,i.details.address,i.details.propertyType,i.details.size,i.details.startDate,i.details.budget,i.details.description,i.id]);
    const csv='\uFEFF'+[columns,...records].map(record=>record.map(csvValue).join(',')).join('\r\n');
    return new Response(csv,{headers:{'Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="buildex-inquiries-'+new Date().toISOString().slice(0,10)+'.csv"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
