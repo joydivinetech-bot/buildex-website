@@ -1,4 +1,4 @@
-import {verifyAccess} from './access.mjs';
+import {verifyAdminSession} from './admin-auth.mjs';
 
 const json=(value,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
 const fail=(status,message)=>{throw Object.assign(new Error(message),{status});};
@@ -16,7 +16,7 @@ async function readBody(request){
 const parseInquiry=row=>{let details={};try{details=JSON.parse(row.details);}catch{}return {...row,details,status:statuses.has(row.status)?row.status:'new'};};
 const csvValue=value=>{let text=String(value??'');if(/^[=+\-@]/.test(text))text="'"+text;return '"'+text.replace(/"/g,'""')+'"';};
 
-export async function handleInquiryAdmin(request,env,authorizer=verifyAccess){
+export async function handleInquiryAdmin(request,env,authorizer=verifyAdminSession){
  try{
   const url=new URL(request.url);if(url.origin!==env.ADMIN_ORIGIN)fail(404,'Not found.');
   const user=await authorizer(request,env);await ensureManagementTable(env.DB);

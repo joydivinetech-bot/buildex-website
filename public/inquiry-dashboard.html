@@ -6,9 +6,10 @@
 <link rel="icon" type="image/png" href="/buildex-logo.png"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/admin/dashboard.css"><script src="/admin/dashboard.js" defer></script>
 </head>
 <body class="inquiry-admin-page">
-<header class="inquiry-admin-header"><div class="wrap"><a href="/" class="brand" aria-label="Buildex home"><img src="/buildex-logo.png" alt="Buildex Construction" width="84" height="84"></a><div><a href="/">View website ↗</a><a href="/cdn-cgi/access/logout">Sign out</a></div></div></header>
+<header class="inquiry-admin-header"><div class="wrap"><a href="/" class="brand" aria-label="Buildex home"><img src="/buildex-logo.png" alt="Buildex Construction" width="84" height="84"></a><div><a href="/">View website ↗</a><button id="sign-out" class="link-button" type="button" hidden>Sign out</button></div></div></header>
 <main class="wrap inquiry-admin-main">
 <span class="eyebrow">BUILDEX CONSTRUCTION LLC</span><h1>Inquiry dashboard</h1><p id="account" class="account-line">Checking administrator access…</p><p id="notice" class="dashboard-notice" role="status" hidden></p>
+<section id="login" class="login-card" hidden><h2>Administrator sign in</h2><p>We’ll send a six-digit sign-in code to the Buildex administrator email.</p><button id="send-code" class="button" type="button">Send sign-in code</button><form id="code-form" hidden><label for="login-code">Sign-in code</label><input id="login-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="000000"><button class="button" type="submit">Sign in</button><button id="resend-code" class="button secondary" type="button">Send a new code</button></form></section>
 <section id="dashboard" hidden>
  <div id="summary" class="inquiry-summary" aria-label="Inquiry summary"></div>
  <section class="inquiry-controls" aria-label="Filter inquiries"><label>Search<input id="search" type="search" placeholder="Name, phone, email, service…"></label><label>Status<select id="status-filter"><option value="all">All statuses</option><option value="new">New</option><option value="contacted">Contacted</option><option value="closed">Closed</option></select></label><button id="refresh" class="button secondary" type="button">Refresh</button><a class="button" href="/admin/api/inquiries.csv">Export CSV</a></section>

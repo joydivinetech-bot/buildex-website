@@ -5,3 +5,6 @@ CREATE TABLE IF NOT EXISTS inquiries (id TEXT PRIMARY KEY,kind TEXT NOT NULL,nam
 CREATE INDEX IF NOT EXISTS published_projects ON projects(status,sort_order,updated_at);
 CREATE INDEX IF NOT EXISTS photo_project ON photos(project_id);
 CREATE TABLE IF NOT EXISTS rate_limits (id TEXT PRIMARY KEY,count INTEGER NOT NULL,expires INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS inquiry_management (inquiry_id TEXT PRIMARY KEY,status TEXT NOT NULL CHECK(status IN ('new','contacted','closed')),updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS admin_login_codes (id TEXT PRIMARY KEY,code_hash TEXT NOT NULL,expires INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS admin_sessions (id TEXT PRIMARY KEY,email TEXT NOT NULL,expires INTEGER NOT NULL,created_at INTEGER NOT NULL);
