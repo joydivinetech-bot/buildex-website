@@ -1,0 +1,25 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {DatabaseSync} from 'node:sqlite';import {readFile} from 'node:fs/promises';import {handleInquiry,notifyInquiry} from '../cloudflare/inquiries.mjs';
+test('forms: verification, durable save, email failure, idempotent retry and private configuration',async()=>{
+ const sql=new DatabaseSync(':memory:');sql.exec(await readFile(new URL('../cloudflare/schema.sql',import.meta.url),'utf8'));sql.exec(await readFile(new URL('../cloudflare/inquiry-notifications.sql',import.meta.url),'utf8'));
+ const prepare=q=>{let args=[];const stmt={bind(...a){args=a;return stmt;},async first(){return sql.prepare(q).get(...args)||null;},async run(){return sql.prepare(q).run(...args);}};return stmt;};
+ const env={PUBLIC_ORIGIN:'https://buildexconstructions.com',TURNSTILE_SITE_KEY:'public-site-key',TURNSTILE_SECRET_KEY:'test-secret',CLOUDFLARE_EMAIL_API_TOKEN:'test-email-secret',CLOUDFLARE_ACCOUNT_ID:'test-account',NOTIFICATION_FROM:'Test <test@example.com>',NOTIFICATION_TO:'recipient@example.com',DB:{prepare,async batch(stmts){sql.exec('BEGIN');try{for(const s of stmts)await s.run();sql.exec('COMMIT');}catch(e){sql.exec('ROLLBACK');throw e;}}}};
+ const data={submissionId:crypto.randomUUID(),name:'Test customer',phone:'3465550123',email:'customer@example.com',kind:'contact',service:'Flooring',description:'Please discuss flooring options.','cf-turnstile-response':'test-token'};
+ const req=(d=data,origin=env.PUBLIC_ORIGIN)=>new Request(env.PUBLIC_ORIGIN+'/api/inquiries',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify(d)});
+ env.EMAIL={async send(){throw Error('Provider unavailable');}};
+ let scheduled=[],calls=0;const ctx={waitUntil(p){scheduled.push(p);}};const network=async url=>{calls++;return url.includes('siteverify')?Response.json({success:true,hostname:'buildexconstructions.com',action:'inquiry'}):Response.json({error:'provider unavailable'},{status:503});};
+ assert.equal((await handleInquiry(req(data,'https://evil.test'),env,ctx,network)).status,403);
+ assert.equal((await handleInquiry(req({...data,email:'bad'}),env,ctx,network)).status,400);
+ assert.equal((await handleInquiry(req(data),env,ctx,async()=>Response.json({success:true,hostname:'evil.test',action:'inquiry'}))).status,400);
+ assert.equal(sql.prepare('SELECT count(*) AS n FROM inquiries').get().n,0);
+ assert.equal((await handleInquiry(req(),env,ctx,network)).status,201);await Promise.all(scheduled);
+ assert.equal(sql.prepare('SELECT count(*) AS n FROM inquiries').get().n,1);
+ assert.equal(sql.prepare('SELECT status FROM inquiry_notifications').get().status,'pending');
+ const before=calls;assert.equal((await handleInquiry(req(),env,ctx,network)).status,200);assert.equal(calls,before);assert.equal(sql.prepare('SELECT count(*) AS n FROM inquiries').get().n,1);
+ assert.equal((await handleInquiry(req({...data,description:'changed'}),env,ctx,network)).status,409);
+ env.EMAIL={async send(payload){assert.equal(payload.to,'recipient@example.com');assert.ok(payload.text.includes('customer@example.com'));assert.ok(payload.html.includes('Buildex Construction'));assert.equal(payload.replyTo,'customer@example.com');}};
+ await notifyInquiry(env,data.submissionId);
+ assert.equal(sql.prepare('SELECT status FROM inquiry_notifications').get().status,'sent');
+ const config=await(await handleInquiry(new Request(env.PUBLIC_ORIGIN+'/api/form-config'),env)).json();assert.deepEqual(config,{enabled:true,siteKey:'public-site-key'});
+ assert.equal((await handleInquiry(req(),{PUBLIC_ORIGIN:env.PUBLIC_ORIGIN})).status,503);
+ sql.close();
+});

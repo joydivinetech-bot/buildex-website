@@ -16,7 +16,6 @@ public-launch/
 
 # Local documentation and development-only material
 *.md
-tests/
 Dockerfile
 .dockerignore
 scripts/export-preview.mjs

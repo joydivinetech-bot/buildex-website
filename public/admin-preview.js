@@ -1,7 +1,27 @@
-'use strict';
-const text=(tag,value,className='')=>{const node=document.createElement(tag);node.textContent=value;if(className)node.className=className;return node;};
-function applyProjects(projects){const grid=document.querySelector('#portfolio-grid');if(!grid)return;const collection=Array.isArray(projects)?projects:[],items=collection.flatMap(project=>(project.photos||[]).map(photo=>({project,photo}))),note=document.querySelector('.portfolio-note');if(note)note.textContent='Private project preview — drafts and changes shown here are not published.';grid.replaceChildren();if(!items.length){grid.append(text('p','Add at least one project photo to preview the collection.','gallery-empty'));return;}items.forEach(({project,photo},index)=>{const button=text('button','','media-card');button.type='button';const cover=text('span','','media-cover'),image=document.createElement('img');image.src='/admin/api/media?key='+encodeURIComponent(photo.key);image.alt=project.name+' — '+(photo.label||'Project photo');image.loading=index?'lazy':'eager';cover.append(image,text('span',project.status==='draft'?'DRAFT PREVIEW':'PROJECT PREVIEW','media-tag'));const meta=text('span','','media-meta'),copy=text('span','','media-copy');copy.append(text('span',project.name,'media-title'),text('span',project.category+(project.location?' / '+project.location:''),'media-subtitle'));meta.append(copy,text('span','↗','media-arrow'));button.append(cover,meta);grid.append(button);});const count=document.querySelector('#media-count');if(count)count.textContent=items.length+(items.length===1?' item':' items');}
-addEventListener('message',event=>{if(event.origin!==location.origin||event.source!==parent||event.data?.type!=='buildex-preview')return;applyProjects(event.data.projects);});
-document.addEventListener('click',event=>{const link=event.target.closest('a');if(!link)return;const url=new URL(link.href,location.href);if(url.origin!==location.origin||['mailto:','tel:','sms:'].includes(url.protocol))return;const pages={'/':'home','/index.html':'home','/services':'services','/services.html':'services','/flooring':'flooring','/flooring.html':'flooring','/estimate':'estimate','/estimate.html':'estimate','/projects':'projects','/projects.html':'projects','/about':'about','/about.html':'about','/contact':'contact','/contact.html':'contact'},page=pages[url.pathname.replace(/\/$/,'')||'/'];if(!page)return;event.preventDefault();parent.postMessage({type:'buildex-preview-navigate',page},location.origin);});
+import {previewPage} from './cms-utils.js';
+let lastProjects = '';
+const safePhoto = photo => {
+  if(typeof photo.src==='string'){
+    const url=new URL(photo.src,location.origin);
+    if(url.origin===location.origin&&(url.protocol==='blob:'||url.pathname==='/admin/api/media'))return {...photo,src:url.href};
+  }
+  return {...photo,src:'/admin/api/media?key='+encodeURIComponent(photo.key||'')};
+};
+addEventListener('message',event=>{
+  if(event.origin!==location.origin||event.source!==parent||event.data?.type!=='buildex-preview'||!Array.isArray(event.data.projects))return;
+  const signature=JSON.stringify(event.data.projects);
+  if(signature===lastProjects)return;
+  lastProjects=signature;
+  const projects=event.data.projects.map(project=>({...project,photos:(project.photos||[]).map(safePhoto)}));
+  document.dispatchEvent(new CustomEvent('buildex-projects-preview',{detail:projects}));
+});
+document.addEventListener('click',event=>{
+  const link=event.target.closest('a');if(!link)return;
+  const href=link.getAttribute('href');if(!href)return;
+  if(href.startsWith('#')){event.preventDefault();document.getElementById(href.slice(1))?.scrollIntoView();return;}
+  const page=previewPage(link.href,location.origin+'/');if(!page)return;
+  event.preventDefault();const url=new URL(link.href,location.origin);
+  parent.postMessage({type:'buildex-preview-navigate',page,search:url.search,hash:url.hash},location.origin);
+});
 document.addEventListener('submit',event=>{event.preventDefault();event.stopImmediatePropagation();},true);
 parent.postMessage({type:'buildex-preview-ready'},location.origin);
