@@ -68,9 +68,10 @@ try{
  await page.locator('#apply-crop').click();
  assert.match(await page.locator('.photo-meta').first().textContent(),/714 × 714/);
  const inline=page.frameLocator('#inline-preview');
- await inline.locator('.media-card').nth(1).waitFor();
+ await inline.locator('.media-card').first().waitFor();
+ assert.equal(await inline.locator('.media-card').count(),1,'Multiple photos stay in one project album');
  assert.equal(await inline.locator('.media-title').first().textContent(),'Sugar Land patio renovation');
- await inline.locator('.media-card').first().click();await inline.locator('#media-viewer').waitFor({state:'visible'});await inline.locator('#media-close').click();
+ await inline.locator('.media-card').first().click();await inline.locator('#media-viewer').waitFor({state:'visible'});assert.match(await inline.locator('#media-position').textContent(),/1 \/ 2/);await inline.locator('#media-next').click();assert.match(await inline.locator('#media-position').textContent(),/2 \/ 2/);await inline.locator('#media-close').click();
  await page.evaluate(()=>window.scrollTo(0,0));
  await page.screenshot({path:path.join(screenshots,'project-editor.png'),fullPage:true});
  let uploads=0;

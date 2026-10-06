@@ -228,6 +228,7 @@ async function editProject(project = null, recovery = false) {
   working = project ? structuredClone(project) : {id:'',name:'',category:categories[0],location:'',description:'',photos:[],status:'draft',updated_at:0};
   delete working.published;
   for(const photo of working.photos) {if(photo.blob) photo.src=objectURL(photo.blob);}
+  selectedPhoto=0;
   dirty=recovery;
   for(const key of ['name','category','location','description']) $('#project-form').elements.namedItem(key).value=working[key]||'';
   $('#project-collection').hidden=true; $('#editor').hidden=false; $('#recovery').hidden=true;
@@ -248,27 +249,38 @@ $('#project-form').addEventListener('input',event=>{
   if(!working||!['name','category','location','description'].includes(event.target.name))return;
   working[event.target.name]=event.target.value; changed();
 });
+let selectedPhoto=0;
 function renderPhotos() {
-  const list=$('#photo-list'); list.replaceChildren();
+  const list=$('#photo-list'), inspector=$('#selected-photo'); list.replaceChildren(); inspector.replaceChildren();
+  selectedPhoto=Math.max(0,Math.min(selectedPhoto,working.photos.length-1));
+  $('#album-count').textContent=working.photos.length+' / 20';
   working.photos.forEach((photo,index)=>{
-    const card=el('article','','photo-card'); card.draggable=true;
-    card.addEventListener('dragstart',event=>{if(event.target.closest('input,button')){event.preventDefault();return;} dragIndex=index; event.dataTransfer.setData('text/plain',String(index)); card.classList.add('dragging');});
-    card.addEventListener('dragend',()=>{dragIndex=null;card.classList.remove('dragging');});
+    const card=el('button','', 'photo-card'+(index===selectedPhoto?' selected':''));card.type='button';card.draggable=true;
+    card.setAttribute('aria-label','Select photo '+(index+1)+(index===0?' · Cover':''));card.setAttribute('aria-pressed',String(index===selectedPhoto));
+    const image=document.createElement('img');image.src=photoURL(photo);image.alt=photo.label;
+    card.append(image,el('span',index===0?'1 · Cover':String(index+1),'thumbnail-number'));
+    card.addEventListener('click',()=>{selectedPhoto=index;renderPhotos();});
+    card.addEventListener('dragstart',event=>{dragIndex=index;event.dataTransfer.setData('text/plain',String(index));});
+    card.addEventListener('dragend',()=>{dragIndex=null;});
     card.addEventListener('dragover',event=>{if(dragIndex!==null)event.preventDefault();});
     card.addEventListener('drop',event=>{event.preventDefault();if(dragIndex!==null){movePhoto(dragIndex,index);dragIndex=null;}});
-    const holder=el('div','','photo-image'),image=document.createElement('img'); image.src=photoURL(photo);image.alt=photo.label;
-    holder.append(image); if(index===0)holder.append(el('span','Cover photo','badge published'));
-    const label=el('label','Photo description / alt text'),input=document.createElement('input'); input.value=photo.label;input.maxLength=150;input.required=true;input.placeholder='Describe this photo';
-    input.addEventListener('input',()=>{photo.label=input.value;image.alt=input.value;changed();});label.append(input);
-    const actions=el('div','','photo-actions');
-    actions.append(action('Crop & resize',()=>openCrop(index)));
-    if(index)actions.append(action('Make cover',()=>movePhoto(index,0)));
-    for(const [symbol,target] of [['↑',index-1],['↓',index+1]]) {const button=action(symbol,()=>movePhoto(index,target));button.disabled=target<0||target>=working.photos.length;button.setAttribute('aria-label',(symbol==='↑'?'Move photo earlier':'Move photo later'));actions.append(button);}
-    actions.append(action('Remove',()=>{if(busy)return;working.photos.splice(index,1);renderPhotos();changed();},'text-button danger-text'));
-    card.append(holder,label,el('p',photoMetadata(photo),'photo-meta'),actions);list.append(card);
+    list.append(card);
   });
+  if(!working.photos.length)return;
+  const photo=working.photos[selectedPhoto],index=selectedPhoto;
+  const heading=el('div','','selected-heading');heading.append(el('strong','Photo '+(index+1)+' of '+working.photos.length),el('span',index===0?'Cover photo':'Album photo','muted'));
+  const image=document.createElement('img');image.src=photoURL(photo);image.alt=photo.label;image.className='selected-image';
+  const actions=el('div','','photo-actions');actions.append(action('Crop & resize',()=>openCrop(index)));
+  if(index)actions.append(action('Make cover',()=>movePhoto(index,0)));
+  for(const [label,target] of [['Move earlier',index-1],['Move later',index+1]]){const button=action(label,()=>movePhoto(index,target));button.disabled=target<0||target>=working.photos.length;actions.append(button);}
+  actions.append(action('Remove',()=>{if(busy)return;working.photos.splice(index,1);renderPhotos();changed();},'text-button danger-text'));
+  const details=el('details','','photo-details'),summary=el('summary','Photo description');
+  const label=el('label','Describe this photo for accessibility'),input=document.createElement('input');input.value=photo.label;input.maxLength=150;
+  input.addEventListener('input',()=>{photo.label=input.value;image.alt=input.value;changed();});label.append(input);details.append(summary,label);
+  inspector.append(heading,image,el('p',photoMetadata(photo),'photo-meta'),actions,details,el('p','Drag thumbnails to reorder. The first photo is your project cover.','field-hint'));
 }
-function movePhoto(from,to) {if(busy)return;const [photo]=working.photos.splice(from,1);working.photos.splice(to,0,photo);renderPhotos();changed();}
+
+function movePhoto(from,to) {if(busy)return;const [photo]=working.photos.splice(from,1);working.photos.splice(to,0,photo);selectedPhoto=to;renderPhotos();changed();}
 function canvasBlob(canvas,quality) {return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('This browser could not export the photo.')),'image/webp',quality));}
 async function exportPhoto(source,rect,quality=.82) {
   const canvas=document.createElement('canvas');canvas.width=rect.width;canvas.height=rect.height;

@@ -5,13 +5,15 @@ The production dashboard is served by cloudflare/forms-worker.mjs at /admin. It 
 ## Everyday workflow
 
 1. Open Projects and choose Add project or Edit project.
-2. Add a title, category, location and description.
-3. Drop up to 20 JPG, PNG or WebP photos. Originals may be up to 8 MB each.
-4. Crop, rotate, position and resize photos. Drag to reorder, use the arrow buttons, or choose Make cover. Add a description for each photo.
+2. Use Add photos to select several photos together, or add more in later batches to the same album. Each project supports up to 20 JPG, PNG or WebP photos, with originals up to 8 MB each.
+3. Select a thumbnail to crop, rotate or resize that photo. Drag thumbnails to reorder, use Move earlier / Move later, or choose Make cover. Photo description expands the accessibility text editor.
+4. Fill in the project title, caption, category and location below the album.
 5. Watch the live project-page preview alongside the editor. Preview website opens all seven pages at desktop, tablet or mobile widths.
 6. Save draft to store the work privately. Publish project / Publish changes updates the public gallery only after confirmation.
 
 Photo library searches saved photography and opens the owning project for editing. Inquiries supports searching, status changes, inquiry details, call/email links and CSV export.
+
+The public gallery and live preview show one card per project. Opening a project displays its photo album with thumbnails and previous/next controls, rather than creating a separate project card for every photo.
 
 ## Draft and photo behavior
 
