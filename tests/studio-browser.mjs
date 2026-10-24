@@ -112,6 +112,39 @@ try{
  const left=await publicPage.locator('#media-prev').boundingBox(),right=await publicPage.locator('#media-next').boundingBox(),stage=await publicPage.locator('#media-stage').boundingBox();
  assert(left.x-stage.x<30&&stage.x+stage.width-right.x-right.width<30,'Popup arrows are at opposite image edges');
  await publicPage.screenshot({path:path.join(screenshots,'public-project-album.png')});await publicPage.close();
+ // Match Services and verify timed playback with normal motion enabled.
+ const layoutPage=await context.newPage();await layoutPage.emulateMedia({reducedMotion:'no-preference'});
+ const published=(await(await fetch(origin+'/api/projects')).json())[0];
+ await layoutPage.route('**/api/projects',route=>route.fulfill({contentType:'application/json',body:JSON.stringify([0,1,2].map(i=>({...published,id:'layout-'+i,name:['Patio renovation','Outdoor project','Project collection'][i]})))}));
+ await layoutPage.goto(origin+'/projects.html');await layoutPage.locator('.project-service-card').nth(2).waitFor();
+ const projectMetrics=await layoutPage.locator('.project-service-card').first().evaluate(card=>{const style=getComputedStyle(card),copy=getComputedStyle(card.querySelector('.project-card-copy')),grid=getComputedStyle(card.parentElement);return {border:style.border,bg:style.backgroundColor,radius:style.borderRadius,padding:copy.padding,gap:grid.gap};});
+ const servicesPage=await context.newPage();await servicesPage.goto(origin+'/services.html');
+ const serviceMetrics=await servicesPage.locator('.service-card').first().evaluate(card=>{const style=getComputedStyle(card),copy=getComputedStyle(card.querySelector('div')),grid=getComputedStyle(card.parentElement);return {border:style.border,bg:style.backgroundColor,radius:style.borderRadius,padding:copy.padding,gap:grid.gap};});
+ assert.deepEqual(projectMetrics,serviceMetrics,'Projects use the Services card surface, spacing and grid');await servicesPage.close();await layoutPage.bringToFront();
+ const carousel=layoutPage.locator('.album-carousel').first();await carousel.scrollIntoViewIfNeeded();await layoutPage.mouse.move(0,0);
+ await layoutPage.waitForFunction(()=>document.querySelector('.album-carousel').dataset.photoIndex==='1',null,{timeout:9000});
+ await layoutPage.waitForFunction(()=>{const image=document.querySelector('.album-open>img:not(.album-outgoing)');return image.complete&&image.naturalWidth>0&&image.getAnimations().every(animation=>animation.playState==='finished')&&getComputedStyle(image).opacity==='1';});
+ assert.equal(await carousel.getAttribute('data-autoplay'),'playing','Project photos advance automatically');
+ await carousel.locator('.album-playback').click();const stopped=await carousel.getAttribute('data-photo-index');
+ await carousel.locator('.album-playback').evaluate(button=>button.blur());await layoutPage.mouse.move(0,0);
+ await layoutPage.waitForTimeout(4800);assert.equal(await carousel.getAttribute('data-photo-index'),stopped,'Pause stops automatic playback');
+ await carousel.locator('.album-next').click();assert.notEqual(await carousel.getAttribute('data-photo-index'),stopped,'Manual arrows still work while paused');
+ await layoutPage.waitForFunction(()=>{const image=document.querySelector('.album-open>img:not(.album-outgoing)');return image.complete&&image.getAnimations().every(animation=>animation.playState==='finished');});
+ await layoutPage.screenshot({path:path.join(screenshots,'projects-services-style.png'),fullPage:true});
+ await layoutPage.setViewportSize({width:390,height:844});assert(await layoutPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Services-style project cards fit mobile');
+ await layoutPage.screenshot({path:path.join(screenshots,'projects-services-mobile.png'),fullPage:true});await layoutPage.close();
+ // The hero must start even while another image keeps window.load pending.
+ const heroPage=await context.newPage();await heroPage.emulateMedia({reducedMotion:'no-preference'});await heroPage.route('**/buildex-logo.png',()=>{});
+ await heroPage.route('https://images.pexels.com/**',route=>route.fulfill({body:Buffer.from(image,'base64'),contentType:'image/png'}));
+ await heroPage.goto(origin+'/',{waitUntil:'domcontentloaded'});
+ await heroPage.bringToFront();
+ try{await heroPage.waitForFunction(()=>[...document.querySelectorAll('.hero-slide')].findIndex(image=>image.classList.contains('is-active'))>0,null,{timeout:10000});}
+ catch(error){console.log(await heroPage.evaluate(()=>({hidden:document.hidden,reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,ready:document.readyState,slides:[...document.querySelectorAll('.hero-slide')].map(image=>({complete:image.complete,width:image.naturalWidth,active:image.classList.contains('is-active')}))})));throw error;}
+ assert.equal(await heroPage.evaluate(()=>document.readyState),'interactive','Hero playback does not wait for window.load');
+ await heroPage.locator('#project-results .album-open').first().waitFor();assert.equal(await heroPage.locator('#project-results .project-service-card').count(),1,'Homepage uses the shared Services-style album');
+ await heroPage.locator('#project-results .album-next').click();await heroPage.locator('#project-results .album-open').click();
+ assert.match(await heroPage.locator('#project-position').textContent(),/2 \/ 2/);await heroPage.locator('#project-prev').click();assert.match(await heroPage.locator('#project-position').textContent(),/1 \/ 2/);await heroPage.locator('#project-close').click();
+ await heroPage.close();
  // Save private changes to an already published project, then verify the live row.
  await form.locator('[name=name]').fill('Private new project title');
  await page.locator('#save-draft').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent.startsWith('Draft saved.'));

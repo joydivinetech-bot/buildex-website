@@ -1,4 +1,5 @@
-import {albumCard,albumViewer} from './album-ui.js';
+import {albumViewer} from './album-ui.js';
+import {projectCard} from './project-cards.js';
 
 const photo=id=>'https://images.pexels.com/photos/'+id+'/pexels-photo-'+id+'.jpeg?auto=compress&w=1400&q=80';
 let items=[
@@ -15,15 +16,7 @@ let filter='all';
 function render(){
   grid.replaceChildren();
   const filtered=items.filter(item=>filter==='all'||item.type===filter);
-  filtered.forEach(item=>{
-    const card=el('article','media-card');
-    const carousel=albumCard(item,(index,opener)=>viewer.open(item,index,opener));
-    carousel.classList.add('media-cover');
-    carousel.append(el('span','media-tag',item.inspiration?'PHOTO / INSPIRATION':'PROJECT ALBUM'));
-    const meta=el('div','media-meta'),copy=el('div'),title=el('button','media-title',item.title);title.type='button';
-    title.addEventListener('click',()=>viewer.open(item,0,title));
-    copy.append(title,el('span','media-subtitle',item.category));meta.append(copy,el('span','media-arrow','↗'));card.append(carousel,meta);grid.append(card);
-  });
+  filtered.forEach((item,number)=>grid.append(projectCard(item,number,viewer)));
   document.querySelector('#media-count').textContent=filtered.length+(items.some(item=>item.inspiration)?' inspiration photos':filtered.length===1?' project':' projects');
 }
 document.querySelectorAll('[data-media-filter]').forEach(button=>button.addEventListener('click',()=>{

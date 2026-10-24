@@ -38,37 +38,45 @@ if (form) {
 }
 const results = document.querySelector('#project-results');
 if (results) {
-  let projects = [], filter = 'All', failed = false;
-  const dialog = document.querySelector('#project-dialog');
-  const close = dialog.querySelector('.dialog-close'); close.addEventListener('click', () => dialog.close());
-  dialog.addEventListener('click', e => { if (e.target === dialog) { const r = dialog.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close(); } });
-  function image(project, photo) { const img = document.createElement('img'); img.src = `${API}/media?key=${encodeURIComponent(photo.key)}`; img.alt = `${project.name} — ${photo.label}`; img.loading = 'lazy'; return img; }
-  function open(project) {
-    document.querySelector('#project-title').textContent = project.name;
-    document.querySelector('#project-description').textContent = `${project.category}${project.location ? ' · ' + project.location : ''}. ${project.description}`;
-    const photos = dialog.querySelector('.project-photos'); photos.replaceChildren();
-    project.photos.forEach(photo => { const figure = document.createElement('figure'); figure.append(image(project, photo), text('figcaption', photo.label)); photos.append(figure); });
-    dialog.showModal();
-  }
-  function render() {
-    results.replaceChildren();
-    const visible = projects.filter(p => filter === 'All' || p.category === filter);
-    if (!visible.length) {
-      const empty = text('div', '', 'gallery-empty');
-      empty.append(text('h3', failed ? 'Our project gallery is being prepared.' : filter === 'All' ? 'Our work, coming into focus.' : `More ${filter.toLowerCase()} projects coming soon.`), text('p', 'We’re gathering photos of our completed work. Have a project in mind? Let’s talk about what we can create for you.'));
-      const a = text('a', 'Tell us about your project ↗', 'text-link'); a.href = 'estimate.html'; empty.append(a); results.append(empty); return;
-    }
-    const grid = text('div', '', 'preview-cards');
-    visible.forEach(project => { const button = text('button', '', 'photo-card project-card'); button.type = 'button';
-      if (project.photos[0]) { const box = text('div', '', 'card-image'); box.append(image(project, project.photos[0])); button.append(box); }
-      button.append(text('span', project.category + (project.location ? ' / ' + project.location : ''), 'eyebrow'), text('h3', project.name + ' ↗'), text('p', project.description)); button.addEventListener('click', () => open(project)); grid.append(button);
-    }); results.append(grid);
-  }
-  document.querySelectorAll('[data-category]').forEach(button => button.addEventListener('click', () => {
-    filter = button.dataset.category;
-    document.querySelectorAll('[data-category]').forEach(b => { b.classList.toggle('active', b === button); b.setAttribute('aria-pressed', String(b === button)); }); render();
-  }));
-  request('/projects').then(data => { if (!Array.isArray(data)) throw new Error(); projects = data.map(p => ({...p, photos: (p.photos || []).filter(f => /^projects\/[a-z0-9-]+\.(jpg|png|webp)$/.test(f.key))})); }).catch(() => { failed = true; }).finally(render);
+  let previewProjects=null,render=()=>{};
+  document.addEventListener('buildex-projects-preview',event=>{
+    if(!document.body.dataset.adminPreview)return;
+    previewProjects=event.detail;render();
+  });
+  void (async()=>{
+    const [{projectCard,loadProjectStyles},{albumViewer}]=await Promise.all([import('./project-cards.js'),import('./album-ui.js')]);
+    await loadProjectStyles();
+    let projects=[],filter='All',failed=false;
+    const dialog=document.querySelector('#project-dialog'),viewer=albumViewer(dialog,{prefix:'project'});
+    const albums=()=>{
+      const privatePreview=!!document.body.dataset.adminPreview;
+      return (privatePreview?(previewProjects||[]):projects).map(project=>({
+        id:project.id,title:project.name,category:project.category,description:project.description,
+        photos:(project.photos||[]).filter(photo=>privatePreview||/^projects\/[a-z0-9-]+\.(jpg|png|webp)$/.test(photo.key)).map(photo=>({src:privatePreview?photo.src:API+'/media?key='+encodeURIComponent(photo.key)}))
+      })).filter(project=>project.photos.length);
+    };
+    render=()=>{
+      const items=albums(),visible=items.filter(project=>filter==='All'||project.category===filter);
+      results.replaceChildren();
+      if(!visible.length){
+        const empty=text('div','','gallery-empty');
+        empty.append(text('h3',failed?'Our project gallery is being prepared.':filter==='All'?'Our work, coming into focus.':'More '+filter.toLowerCase()+' projects coming soon.'),text('p','Our completed projects will appear here. Have a project in mind? Let’s talk about what we can create for you.'));
+        const link=text('a','Tell us about your project ↗','text-link');link.href='estimate.html';empty.append(link);results.append(empty);
+      }else{
+        const grid=text('div','','service-grid');visible.forEach((project,index)=>grid.append(projectCard(project,index,viewer)));results.append(grid);
+      }
+      if(dialog.open){const selected=items.find(project=>project.id===viewer.id);if(selected)viewer.update(selected);else dialog.close();}
+    };
+    document.querySelectorAll('[data-category]').forEach(button=>button.addEventListener('click',()=>{
+      filter=button.dataset.category;document.querySelectorAll('[data-category]').forEach(other=>{other.classList.toggle('active',other===button);other.setAttribute('aria-pressed',String(other===button));});render();
+    }));
+    if(document.body.dataset.adminPreview){render();return;}
+    try{const data=await request('/projects');if(!Array.isArray(data))throw Error();projects=data;}
+    catch{failed=true;}
+    render();
+  })().catch(()=>{
+    results.replaceChildren(text('p','The project gallery could not load. Please refresh the page or contact us.'));
+  });
 }
 // Warm local document links after the current page has finished loading.
 if (onWeb) window.addEventListener('load', () => {
@@ -149,11 +157,21 @@ if (navigation && menuButton) {
 // Smooth, low-frequency hero slideshow; pause when the page is not visible.
 (() => {
   const slides=[...document.querySelectorAll('.hero-slide')],reduced=matchMedia('(prefers-reduced-motion: reduce)');
-  if(slides.length<2||reduced.matches)return;
-  let current=0,timer;
-  const advance=()=>{slides[current].classList.remove('is-active');current=(current+1)%slides.length;slides[current].classList.add('is-active');};
-  const start=()=>{clearInterval(timer);timer=setInterval(advance,6500);};
-  addEventListener('load',start,{once:true});
+  if(slides.length<2)return;
+  let current=Math.max(0,slides.findIndex(slide=>slide.classList.contains('is-active'))),timer;
+  slides.forEach(slide=>slide.loading='eager');
+  const advance=()=>{
+    // Keep the visible image until another photo has actually loaded.
+    for(let offset=1;offset<slides.length;offset++){
+      const next=(current+offset)%slides.length;
+      if(!slides[next].complete||!slides[next].naturalWidth)continue;
+      slides[current].classList.remove('is-active');current=next;slides[current].classList.add('is-active');break;
+    }
+  };
+  const start=()=>{clearInterval(timer);if(!reduced.matches&&!document.hidden)timer=setInterval(advance,6500);};
+  // Do not wait for unrelated images or analytics to finish loading.
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+  reduced.addEventListener('change',start);
   document.addEventListener('visibilitychange',()=>{if(document.hidden)clearInterval(timer);else start();});
 })();
 // Hero writing sequence: preserve semantic text, line breaks, and final layout.

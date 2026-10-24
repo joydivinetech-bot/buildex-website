@@ -15,6 +15,8 @@ Photo library searches saved photography and opens the owning project for editin
 
 The Studio collection, public gallery and live preview show one card per project. Album cards have previous/next buttons, position indicators and swipe support. Opening a project displays its large photo viewer with buttons at the left and right image edges, thumbnails, keyboard arrows and one shared project caption. All three surfaces use album-ui.js and album-ui.css.
 
+Homepage and public Projects cards use the Services grid and card styling through project-cards.js. Albums with multiple photos advance every 4.5 seconds with a crossfade. The pause/play button controls playback; hovering, keyboard focus, an open dialog, a hidden page or an offscreen card pauses automatic advancement. Reduced-motion users start with autoplay paused and can opt in with Play. The popup remains under manual control. The homepage hero slideshow starts at DOM readiness and waits for a loaded photo before switching, independently of other page resources. Private homepage previews receive the draft project collection too.
+
 ## Draft and photo behavior
 
 - Project details and pending photo files are recovered from IndexedDB after a refresh. Storage is scoped to the signed-in administrator. Browser storage failure is shown in the edit status; Save draft remains the durable option.
