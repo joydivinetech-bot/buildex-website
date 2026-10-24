@@ -63,7 +63,7 @@ if (results) {
         empty.append(text('h3',failed?'Our project gallery is being prepared.':filter==='All'?'Our work, coming into focus.':'More '+filter.toLowerCase()+' projects coming soon.'),text('p','Our completed projects will appear here. Have a project in mind? Let’s talk about what we can create for you.'));
         const link=text('a','Tell us about your project ↗','text-link');link.href='estimate.html';empty.append(link);results.append(empty);
       }else{
-        const grid=text('div','','service-grid');visible.forEach((project,index)=>grid.append(projectCard(project,index,viewer)));results.append(grid);
+        const grid=text('div','','service-grid project-list');visible.forEach((project,index)=>grid.append(projectCard(project,index,viewer)));results.append(grid);
       }
       if(dialog.open){const selected=items.find(project=>project.id===viewer.id);if(selected)viewer.update(selected);else dialog.close();}
     };

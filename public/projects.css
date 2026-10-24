@@ -1,4 +1,4 @@
-/* Project cards use the same grid, type and spacing as Services. */
+/* Full-width project rows share the site's Services typography and surfaces. */
 .portfolio-intro{padding-bottom:32px}
 .portfolio-intro h1 em,.portfolio-end em{font-family:Georgia,serif;font-weight:400}
 .portfolio-lead{display:flex;justify-content:space-between;align-items:end;gap:24px}
@@ -9,13 +9,19 @@
 .portfolio-filters button[aria-pressed=true]{background:#0b2948;color:white;border-radius:3px}
 #media-count{font-size:11px;color:#536579}
 .portfolio-section{padding-bottom:10px}.media-card{min-width:0}
-.project-service-card>.album-carousel{padding:0;aspect-ratio:3/2}
+.project-list{grid-template-columns:minmax(0,1fr);gap:32px}
+.project-list>.project-service-card{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);grid-column:auto;min-height:clamp(440px,32vw,560px);border-radius:8px}
+.project-service-card>.album-carousel,.project-service-card:last-child>.album-carousel{padding:0;aspect-ratio:auto;min-height:clamp(440px,32vw,560px)}
 .project-service-card .album-open{position:absolute;inset:0}
 .project-service-card .album-open img,.project-service-card:last-child .album-open img{height:100%;max-height:none;aspect-ratio:auto}
-.project-service-card:last-child>.album-carousel{aspect-ratio:auto;min-height:280px}
+.project-list .project-card-copy{display:flex;flex-direction:column;justify-content:center;padding:clamp(28px,4vw,64px);min-width:0}
+.project-list .project-card-copy h2{font-size:clamp(28px,2.8vw,40px);line-height:1.2;margin-bottom:20px}
+.project-list .project-card-copy p{font-size:16px;line-height:1.8;margin-bottom:24px}
+.project-list .project-card-copy .text-link{align-self:flex-start}
 .media-title{font:inherit;letter-spacing:inherit;border:0;background:transparent;color:inherit;padding:0;text-align:left;cursor:zoom-in}
-.project-card-description{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;white-space:pre-line}
+.project-card-description{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;overflow:hidden;white-space:pre-line}
 .project-card-copy>.text-link{padding:0;border:0;background:transparent;cursor:zoom-in}
 .portfolio-end{padding:90px 0;text-align:center}.portfolio-end h2{font-size:clamp(32px,4vw,54px)}
-@media(max-width:900px){.portfolio-lead{display:block}.portfolio-index{display:block;margin-top:20px}.project-service-card:last-child>.album-carousel{aspect-ratio:3/2;min-height:0}}
+@media(max-width:900px){.portfolio-lead{display:block}.portfolio-index{display:block;margin-top:20px}}
+@media(max-width:760px){.project-list{gap:26px}.project-list>.project-service-card{display:block;min-height:0}.project-service-card>.album-carousel,.project-service-card:last-child>.album-carousel{aspect-ratio:4/3;min-height:280px}.project-list .project-card-copy{padding:28px 24px}.project-list .project-card-copy h2{font-size:28px}.project-list .project-card-copy p{font-size:15px}}
 @media(max-width:600px){.portfolio-toolbar{flex-wrap:wrap;gap:10px;padding:12px 0}.portfolio-filters{gap:2px}.portfolio-filters button{padding:9px 12px}.portfolio-end{padding:58px 0}}

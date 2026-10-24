@@ -35,48 +35,56 @@ function swipe(element, move) {
 
 export function albumCard(album, onOpen) {
   const photos=album.photos||[], root=node('div','album-carousel');
-  let index=0,timer,observer,visible=false,hovered=false,paused=false;
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
-  paused=reduced.matches;
-  const image=node('img'); image.loading='lazy'; image.decoding='async'; image.draggable=false;
+  let index=0,elapsed=0,lastTime=0,frame=0,monitor,observer,visible=false,paused=reduced.matches;
+  const image=node('img');image.loading='lazy';image.decoding='async';image.draggable=false;
   const outgoing=node('img','album-outgoing');outgoing.alt='';outgoing.setAttribute('aria-hidden','true');outgoing.draggable=false;
-  const open=control('', 'Open '+album.title, ()=>onOpen(index,open), 'album-open');
-  open.append(outgoing,image); root.append(open);
-  const count=node('span','album-count'), dots=node('div','album-dots');
-  const play=control(paused?'▶':'Ⅱ',paused?'Play project slideshow':'Pause project slideshow',()=>{
-    paused=!paused;play.textContent=paused?'▶':'Ⅱ';play.setAttribute('aria-label',paused?'Play project slideshow':'Pause project slideshow');root.dataset.autoplay=paused?'paused':'playing';restart();
-  },'album-playback');
-  function show() {
+  const open=control('','Open '+album.title,()=>onOpen(index,open),'album-open');open.append(outgoing,image);root.append(open);
+  const count=node('span','album-count'),dots=node('div','album-dots');
+  // Keep playback control available to keyboard/screen-reader users without a visible icon.
+  const motion=control('','',()=>{paused=!paused;updateMotion();sync();},'album-motion-control');
+  function updateMotion(){motion.textContent=paused?'Play slideshow':'Pause slideshow';motion.setAttribute('aria-label',motion.textContent);root.dataset.autoplay=paused?'paused':'playing';}
+  function progress(){
+    const value=Math.min(1,elapsed/3000);root.dataset.progress=value.toFixed(3);
+    [...dots.children].forEach((dot,i)=>dot.style.setProperty('--progress',i===index?(value*100)+'%':'0%'));
+  }
+  function show(){
     image.getAnimations().forEach(animation=>animation.cancel());outgoing.getAnimations().forEach(animation=>animation.cancel());
     const old=image.complete&&image.naturalWidth?image.currentSrc:null;
     if(old&&old!==photos[index].src&&!reduced.matches){
       outgoing.src=old;outgoing.style.opacity='1';image.style.opacity='0';
-      image.onload=()=>{image.style.opacity='1';outgoing.style.opacity='0';image.animate([{opacity:0},{opacity:1}],{duration:650,easing:'ease-out'});outgoing.animate([{opacity:1},{opacity:0}],{duration:650,easing:'ease-out'});};
+      image.onload=()=>{image.style.opacity='1';outgoing.style.opacity='0';image.animate([{opacity:0},{opacity:1}],{duration:500,easing:'ease-out'});outgoing.animate([{opacity:1},{opacity:0}],{duration:500,easing:'ease-out'});};
     }else{outgoing.style.opacity='0';image.style.opacity='1';image.onload=null;}
-    image.src=photos[index].src;
-    image.alt=album.title+' — photo '+(index+1);
-    root.dataset.photoIndex=String(index);
-    count.textContent=(index+1)+' / '+photos.length;
-    [...dots.children].forEach((dot,i)=>{dot.setAttribute('aria-pressed',String(i===index));});
+    image.src=photos[index].src;image.alt=album.title+' — photo '+(index+1);
+    root.dataset.photoIndex=String(index);count.textContent=(index+1)+' / '+photos.length;
+    [...dots.children].forEach((dot,i)=>dot.setAttribute('aria-pressed',String(i===index)));progress();
     if(photos.length>1){const preload=new Image();preload.src=photos[(index+1)%photos.length].src;}
   }
-  function move(delta) {index=(index+delta+photos.length)%photos.length;show();restart();}
-  function restart(){
-    clearInterval(timer);
-    if(photos.length<2)return;
-    timer=setInterval(()=>{
-      if(!root.isConnected){clearInterval(timer);observer?.disconnect();return;}
-      if(paused||!visible||hovered||document.hidden||root.contains(document.activeElement)||document.querySelector('dialog[open]'))return;
-      move(1);
-    },4500);
+  function select(next){index=(next+photos.length)%photos.length;elapsed=0;lastTime=0;show();}
+  function move(delta){select(index+delta);}
+  const canPlay=()=>!paused&&visible&&!document.hidden&&!document.querySelector('dialog[open]')&&image.complete&&image.naturalWidth>0;
+  function dispose(){clearInterval(monitor);cancelAnimationFrame(frame);observer?.disconnect();reduced.removeEventListener('change',preferenceChanged);}
+  function tick(now){
+    frame=0;
+    if(!root.isConnected){dispose();return;}
+    if(!canPlay()){lastTime=0;return;}
+    if(lastTime)elapsed+=Math.min(now-lastTime,250);
+    lastTime=now;
+    if(elapsed>=3000)move(1);else progress();
+    frame=requestAnimationFrame(tick);
   }
-  if (photos.length>1) {
+  function sync(){
+    if(!root.isConnected){dispose();return;}
+    if(canPlay()){if(!frame){lastTime=0;frame=requestAnimationFrame(tick);}}
+    else{cancelAnimationFrame(frame);frame=0;lastTime=0;}
+  }
+  function preferenceChanged(){paused=reduced.matches;updateMotion();sync();}
+  if(photos.length>1){
     root.append(control('‹','Previous photo in '+album.title,()=>move(-1),'album-arrow album-prev'),control('›','Next photo in '+album.title,()=>move(1),'album-arrow album-next'),count);
-    photos.forEach((_,i)=>dots.append(control('', 'Show photo '+(i+1)+' in '+album.title, ()=>{index=i;show();restart();},'album-dot')));
-    root.append(dots,play); swipe(root,move);root.dataset.autoplay=paused?'paused':'playing';
-    root.addEventListener('pointerenter',event=>{if(event.pointerType==='mouse')hovered=true;});root.addEventListener('pointerleave',()=>{hovered=false;restart();});
-    if('IntersectionObserver' in window){observer=new IntersectionObserver(entries=>visible=entries[0].isIntersecting,{threshold:.25});observer.observe(root);}else visible=true;
-    restart();
+    photos.forEach((_,i)=>dots.append(control('','Show photo '+(i+1)+' in '+album.title,()=>select(i),'album-dot')));
+    root.append(dots,motion);swipe(root,move);updateMotion();
+    if('IntersectionObserver' in window){observer=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;sync();},{threshold:.15});observer.observe(root);}else visible=true;
+    reduced.addEventListener('change',preferenceChanged);monitor=setInterval(sync,200);
   }
   image.addEventListener('error',()=>{image.alt='Photo unavailable — '+album.title;image.style.opacity='1';outgoing.style.opacity='0';});
   if(photos.length)show();

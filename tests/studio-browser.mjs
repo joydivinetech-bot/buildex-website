@@ -112,27 +112,35 @@ try{
  const left=await publicPage.locator('#media-prev').boundingBox(),right=await publicPage.locator('#media-next').boundingBox(),stage=await publicPage.locator('#media-stage').boundingBox();
  assert(left.x-stage.x<30&&stage.x+stage.width-right.x-right.width<30,'Popup arrows are at opposite image edges');
  await publicPage.screenshot({path:path.join(screenshots,'public-project-album.png')});await publicPage.close();
- // Match Services and verify timed playback with normal motion enabled.
+ // Every project gets a taller row; four progress dots run through a complete loop.
  const layoutPage=await context.newPage();await layoutPage.emulateMedia({reducedMotion:'no-preference'});
  const published=(await(await fetch(origin+'/api/projects')).json())[0];
- await layoutPage.route('**/api/projects',route=>route.fulfill({contentType:'application/json',body:JSON.stringify([0,1,2].map(i=>({...published,id:'layout-'+i,name:['Patio renovation','Outdoor project','Project collection'][i]})))}));
+ await layoutPage.route('**/api/projects',route=>route.fulfill({contentType:'application/json',body:JSON.stringify([0,1,2].map(i=>({...published,id:'layout-'+i,name:['Patio renovation','Outdoor project','Project collection'][i],photos:[...published.photos,...published.photos]})))}));
  await layoutPage.goto(origin+'/projects.html');await layoutPage.locator('.project-service-card').nth(2).waitFor();
- const projectMetrics=await layoutPage.locator('.project-service-card').first().evaluate(card=>{const style=getComputedStyle(card),copy=getComputedStyle(card.querySelector('.project-card-copy')),grid=getComputedStyle(card.parentElement);return {border:style.border,bg:style.backgroundColor,radius:style.borderRadius,padding:copy.padding,gap:grid.gap};});
- const servicesPage=await context.newPage();await servicesPage.goto(origin+'/services.html');
- const serviceMetrics=await servicesPage.locator('.service-card').first().evaluate(card=>{const style=getComputedStyle(card),copy=getComputedStyle(card.querySelector('div')),grid=getComputedStyle(card.parentElement);return {border:style.border,bg:style.backgroundColor,radius:style.borderRadius,padding:copy.padding,gap:grid.gap};});
- assert.deepEqual(projectMetrics,serviceMetrics,'Projects use the Services card surface, spacing and grid');await servicesPage.close();await layoutPage.bringToFront();
- const carousel=layoutPage.locator('.album-carousel').first();await carousel.scrollIntoViewIfNeeded();await layoutPage.mouse.move(0,0);
- await layoutPage.waitForFunction(()=>document.querySelector('.album-carousel').dataset.photoIndex==='1',null,{timeout:9000});
- await layoutPage.waitForFunction(()=>{const image=document.querySelector('.album-open>img:not(.album-outgoing)');return image.complete&&image.naturalWidth>0&&image.getAnimations().every(animation=>animation.playState==='finished')&&getComputedStyle(image).opacity==='1';});
- assert.equal(await carousel.getAttribute('data-autoplay'),'playing','Project photos advance automatically');
- await carousel.locator('.album-playback').click();const stopped=await carousel.getAttribute('data-photo-index');
- await carousel.locator('.album-playback').evaluate(button=>button.blur());await layoutPage.mouse.move(0,0);
- await layoutPage.waitForTimeout(4800);assert.equal(await carousel.getAttribute('data-photo-index'),stopped,'Pause stops automatic playback');
- await carousel.locator('.album-next').click();assert.notEqual(await carousel.getAttribute('data-photo-index'),stopped,'Manual arrows still work while paused');
+ const rows=await layoutPage.locator('.project-service-card').evaluateAll(cards=>cards.map(card=>{
+   const box=card.getBoundingClientRect(),photo=card.querySelector('.album-carousel').getBoundingClientRect(),copy=card.querySelector('.project-card-copy').getBoundingClientRect();
+   return {x:box.x,y:box.y,width:box.width,height:box.height,photoX:photo.x,copyX:copy.x,photoY:photo.y,copyY:copy.y};
+ }));
+ for(let i=0;i<rows.length;i++){assert(rows[i].height>=440,'Desktop project rows are taller');assert(rows[i].photoX<rows[i].copyX,'Photo left and details right');assert(Math.abs(rows[i].photoY-rows[i].copyY)<2);if(i)assert(rows[i].y>=rows[i-1].y+rows[i-1].height,'Projects stack as full-width rows');}
+ assert.equal(await layoutPage.locator('.album-playback').count(),0,'The visible pause icon is removed');
+ const carousel=layoutPage.locator('.album-carousel').first();await carousel.scrollIntoViewIfNeeded();
+ assert.equal(await carousel.locator('.album-dot').count(),4,'One progress dot per photo');
+ await carousel.locator('.album-dot').first().click();
+ const cycleStart=Date.now();
+ await layoutPage.waitForFunction(()=>{const root=document.querySelector('.album-carousel');return root.dataset.photoIndex==='0'&&Number(root.dataset.progress)>.2&&Number(root.dataset.progress)<.8;},null,{timeout:2500});
+ assert.match(await carousel.locator('.album-dot').first().evaluate(dot=>getComputedStyle(dot,'::after').backgroundImage),/conic-gradient/,'The active dot visibly fills');
+ await layoutPage.waitForFunction(()=>document.querySelector('.album-carousel').dataset.photoIndex==='1',null,{timeout:4500});
+ assert(Date.now()-cycleStart>=2800&&Date.now()-cycleStart<4500,'Each photo advances after three seconds');
+ for(const next of ['2','3','0'])await layoutPage.waitForFunction(next=>document.querySelector('.album-carousel').dataset.photoIndex===next,next,{timeout:4500});
+ assert.equal(await carousel.getAttribute('data-autoplay'),'playing','The fourth photo loops continuously to the first');
+ await carousel.locator('.album-next').click();assert.equal(await carousel.getAttribute('data-photo-index'),'1','Manual arrows remain available');
+ assert(Number(await carousel.getAttribute('data-progress'))<.15,'Manual selection resets the dot timer');
+ await carousel.locator('.album-prev').click();
  await layoutPage.waitForFunction(()=>{const image=document.querySelector('.album-open>img:not(.album-outgoing)');return image.complete&&image.getAnimations().every(animation=>animation.playState==='finished');});
- await layoutPage.screenshot({path:path.join(screenshots,'projects-services-style.png'),fullPage:true});
- await layoutPage.setViewportSize({width:390,height:844});assert(await layoutPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Services-style project cards fit mobile');
- await layoutPage.screenshot({path:path.join(screenshots,'projects-services-mobile.png'),fullPage:true});await layoutPage.close();
+ await layoutPage.screenshot({path:path.join(screenshots,'project-rows-desktop.png'),fullPage:true});
+ await layoutPage.setViewportSize({width:390,height:844});assert(await layoutPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Project rows fit mobile');
+ const mobileRow=await layoutPage.locator('.project-service-card').first().evaluate(card=>{const photo=card.querySelector('.album-carousel').getBoundingClientRect(),copy=card.querySelector('.project-card-copy').getBoundingClientRect();return {photoBottom:photo.bottom,copyTop:copy.top};});assert(mobileRow.copyTop>=mobileRow.photoBottom,'Mobile stacks details under the photo');
+ await layoutPage.screenshot({path:path.join(screenshots,'project-rows-mobile.png'),fullPage:true});await layoutPage.close();
  // The hero must start even while another image keeps window.load pending.
  const heroPage=await context.newPage();await heroPage.emulateMedia({reducedMotion:'no-preference'});await heroPage.route('**/buildex-logo.png',()=>{});
  await heroPage.route('https://images.pexels.com/**',route=>route.fulfill({body:Buffer.from(image,'base64'),contentType:'image/png'}));
