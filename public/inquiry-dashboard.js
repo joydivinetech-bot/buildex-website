@@ -1,4 +1,5 @@
 import {categories, pages, cropRect, formatBytes, photoMetadata, previewCollection} from './cms-utils.js';
+import {albumCard,albumViewer} from './album-ui.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -7,6 +8,7 @@ const action = (label, handler, className = 'text-button') => {const button = el
 let projects = [], inquiries = [], working = null, dirty = false, busy = false, user = '', storageMode = 'database', challenge = '';
 let recoveryTimer, previewTimer, dragIndex = null, crop = null, cropGeneration = 0, cropTimer;
 let inlineSize = 'desktop', currentPage = 'home', restoreRecord = null, authLost = false;
+let importQueue=null;
 const urls = new Set();
 const objectURL = blob => {const url = URL.createObjectURL(blob); urls.add(url); return url;};
 const photoURL = photo => photo.src || '/admin/api/media?key=' + encodeURIComponent(photo.key);
@@ -93,8 +95,13 @@ function openTab(name) {
   history.replaceState(null, '', '#' + name);
   if (name === 'projects' && working) requestAnimationFrame(sizeInline);
 }
-$$('[data-tab]').forEach(button => button.addEventListener('click', () => openTab(button.dataset.tab)));
-$$('[data-open]').forEach(button => button.addEventListener('click', () => openTab(button.dataset.open)));
+async function navigateTab(name){
+  if(busy)return;
+  if(name==='projects'&&working){if(!await leaveProject())return;}
+  openTab(name);
+}
+$$('[data-tab]').forEach(button => button.addEventListener('click', () => navigateTab(button.dataset.tab)));
+$$('[data-open]').forEach(button => button.addEventListener('click', () => navigateTab(button.dataset.open)));
 
 function showLogin(message) {
   $('#login').hidden = false; $('#dashboard').hidden = true;
@@ -154,16 +161,19 @@ function renderOverview() {
   inquiries.slice(0,4).forEach(item => {const row = el('div', '', 'recent-row'), copy = el('div', '', 'row-main'); copy.append(el('strong', item.name), el('small', item.service + ' · ' + date(item.created_at))); row.append(copy, el('span', item.status, 'badge ' + item.status), action('View →', () => viewInquiry(item))); latest.append(row);});
   if (!inquiries.length) empty(latest, 'A clear inbox', 'New website inquiries will appear here.');
 }
+const projectAlbum=project=>({...project,title:project.name,photos:project.photos.map(photo=>({src:photoURL(photo)}))});
+const projectViewer=albumViewer($('#project-viewer'),{prefix:'project-viewer',edit:project=>editProject(projects.find(item=>item.id===project.id))});
 function renderProjects() {
   const query = $('#project-search').value.toLowerCase(), filter = $('#project-filter').value, category = $('#category-filter').value;
   const selected = projects.filter(p => (!query || [p.name,p.location].join(' ').toLowerCase().includes(query)) && (filter === 'all' || (filter === 'changes' ? p.hasDraft : p.status === filter)) && (category === 'all' || p.category === category));
   const list = $('#project-list'); list.replaceChildren(); $('#project-results').textContent = selected.length + ' projects';
   for (const project of selected) {
     const card = el('article', '', 'project-card'), image = el('div', '', 'project-image');
-    if (project.photos[0]) {const img = document.createElement('img'); img.src = photoURL(project.photos[0]); img.alt = project.photos[0].label; img.loading = 'lazy'; image.append(img);}
+    if (project.photos.length) {const album=projectAlbum(project);image.append(albumCard(album,(index,trigger)=>projectViewer.open(album,index,trigger)));}
     else image.append(el('span','▧'));
     image.append(badge(project));
-    const copy = el('div', '', 'project-content'); copy.append(el('h3',project.name), el('p',[project.category,project.location].filter(Boolean).join(' · ')));
+    const copy = el('div', '', 'project-content'),title=action(project.name,()=>{if(project.photos.length)projectViewer.open(projectAlbum(project),0,title);else editProject(project);},'project-name');
+    copy.append(title, el('p',[project.category,project.location].filter(Boolean).join(' · ')));
     const meta = el('div','','card-meta'); meta.append(el('span',project.photos.length + ' photos'),el('span','Updated ' + date(project.updated_at)));
     const actions = el('div','','card-actions'), move = el('div','','move'), index = projects.indexOf(project);
     actions.append(action('Edit project →', () => editProject(project)), action('Delete', () => deleteProject(project), 'text-button danger-text'));
@@ -241,7 +251,12 @@ async function editProject(project = null, recovery = false) {
   if(recovery)changed();
 }
 $$('[data-new-project]').forEach(button=>button.addEventListener('click',()=>editProject()));
-$('#back-projects').addEventListener('click',async()=>{if(!await canLeave())return; await clearRecovery(); releaseEditor(); working=null; dirty=false; $('#editor').hidden=true; $('#project-collection').hidden=false;});
+async function leaveProject(){
+  if(!await canLeave())return false;
+  await clearRecovery();releaseEditor();working=null;dirty=false;
+  $('#editor').hidden=true;$('#project-collection').hidden=false;renderProjects();return true;
+}
+$('#back-projects').addEventListener('click',leaveProject);
 $('#restore-edit').addEventListener('click',()=>editProject(restoreRecord,true));
 $('#discard-recovery').addEventListener('click',()=>clearRecovery());
 $('#project-form').addEventListener('submit',event=>event.preventDefault());
@@ -260,8 +275,9 @@ function renderPhotos() {
     const image=document.createElement('img');image.src=photoURL(photo);image.alt=photo.label;
     card.append(image,el('span',index===0?'1 · Cover':String(index+1),'thumbnail-number'));
     card.addEventListener('click',()=>{selectedPhoto=index;renderPhotos();});
-    card.addEventListener('dragstart',event=>{dragIndex=index;event.dataTransfer.setData('text/plain',String(index));});
-    card.addEventListener('dragend',()=>{dragIndex=null;});
+    image.draggable=false;
+    card.addEventListener('dragstart',event=>{dragIndex=index;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',String(index));card.classList.add('dragging');});
+    card.addEventListener('dragend',()=>{dragIndex=null;card.classList.remove('dragging');});
     card.addEventListener('dragover',event=>{if(dragIndex!==null)event.preventDefault();});
     card.addEventListener('drop',event=>{event.preventDefault();if(dragIndex!==null){movePhoto(dragIndex,index);dragIndex=null;}});
     list.append(card);
@@ -274,10 +290,7 @@ function renderPhotos() {
   if(index)actions.append(action('Make cover',()=>movePhoto(index,0)));
   for(const [label,target] of [['Move earlier',index-1],['Move later',index+1]]){const button=action(label,()=>movePhoto(index,target));button.disabled=target<0||target>=working.photos.length;actions.append(button);}
   actions.append(action('Remove',()=>{if(busy)return;working.photos.splice(index,1);renderPhotos();changed();},'text-button danger-text'));
-  const details=el('details','','photo-details'),summary=el('summary','Photo description');
-  const label=el('label','Describe this photo for accessibility'),input=document.createElement('input');input.value=photo.label;input.maxLength=150;
-  input.addEventListener('input',()=>{photo.label=input.value;image.alt=input.value;changed();});label.append(input);details.append(summary,label);
-  inspector.append(heading,image,el('p',photoMetadata(photo),'photo-meta'),actions,details,el('p','Drag thumbnails to reorder. The first photo is your project cover.','field-hint'));
+  inspector.append(heading,image,el('p',photoMetadata(photo),'photo-meta'),actions,el('p','Drag any thumbnail to the first position to make it the cover. One caption below applies to the whole project.','field-hint'));
 }
 
 function movePhoto(from,to) {if(busy)return;const [photo]=working.photos.splice(from,1);working.photos.splice(to,0,photo);selectedPhoto=to;renderPhotos();changed();}
@@ -291,24 +304,33 @@ async function exportPhoto(source,rect,quality=.82) {
   return {blob,width:canvas.width,height:canvas.height,bytes:blob.size};
 }
 async function addPhotos(files) {
-  if(!working||!files.length||busy)return;
+  if(!working||!files.length||busy||importQueue)return;
   if(working.photos.length+files.length>20){fail('A project can have up to 20 photos.');return;}
-  await run(async()=>{
-    let added=0;
-    try {
-      for(const file of files) {
-        if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw Error(file.name+': use JPG, PNG or WebP.');
-        if(file.size>8000000)throw Error(file.name+': choose an original under 8 MB.');
-        $('#upload-progress').textContent='Preparing photo '+(added+1)+' of '+files.length+'…';
-        const bitmap=await createImageBitmap(file);
-        try {
-          const result=await exportPhoto(bitmap,cropRect(bitmap.width,bitmap.height,bitmap.width/bitmap.height,1,.5,.5,1200));
-          working.photos.push({...result,original:file,src:objectURL(result.blob),label:file.name.replace(/\.[^.]+$/,'').replace(/[_-]/g,' ')||'Project photo',filename:file.name});
-          added++;renderPhotos();changed();
-        }finally{bitmap.close();}
-      }
-    }finally{$('#upload-progress').textContent=added+' photos prepared. Save draft to upload and keep them.';}
-  });
+  for(const file of files){
+    if(!['image/jpeg','image/png','image/webp'].includes(file.type)){fail(file.name+': use JPG, PNG or WebP.');return;}
+    if(file.size>8000000){fail(file.name+': choose an original under 8 MB.');return;}
+  }
+  importQueue={files,index:0,added:0,skipped:0};setBusy(true);await nextImportPhoto();
+}
+function finishImport(cancelled=false){
+  const queue=importQueue;if(!queue)return;
+  $('#upload-progress').textContent=queue.added+' photo'+(queue.added===1?'':'s')+' added to this project.'+(queue.skipped?' '+queue.skipped+' skipped.':'')+(cancelled?' Remaining selection cancelled.':'')+' Add more anytime; save draft when ready.';
+  importQueue=null;setBusy(false);$('#photo-upload').focus();
+}
+async function nextImportPhoto(){
+  if(!importQueue)return;
+  while(importQueue.index<importQueue.files.length){
+    const file=importQueue.files[importQueue.index];
+    try{
+      const bitmap=await createImageBitmap(file);
+      crop={bitmap,original:file,rotation:0,flipX:1,flipY:1,result:null,importing:true};resetCrop();
+      $('#crop-title').textContent='Edit photo '+(importQueue.index+1)+' of '+importQueue.files.length;
+      $('#crop-file').textContent=file.name+' · Crop or rotate, then add to your project';
+      $('#skip-crop').hidden=false;$('#apply-crop').textContent=importQueue.index<importQueue.files.length-1?'Add photo & next':'Add photo';
+      $('#crop-dialog').returnValue='';$('#crop-dialog').showModal();await drawCrop();return;
+    }catch(error){fail('Could not open '+file.name+'. '+error.message);importQueue.index++;importQueue.skipped++;}
+  }
+  finishImport();
 }
 $('#photo-upload').addEventListener('change',event=>{const files=[...event.target.files];event.target.value='';void addPhotos(files);});
 $('#drop-zone').addEventListener('dragover',event=>{event.preventDefault();$('#drop-zone').classList.add('dragover');});
@@ -404,18 +426,19 @@ async function openCrop(index) {
   await run(async()=>{
     if(!source){const response=await fetch(photoURL(photo));if(!response.ok)throw Error('Could not load this photo. Sign in again and retry.');source=await response.blob();}
     const bitmap=await createImageBitmap(source);
-    crop={photo,index,bitmap,original:source,rotation:0,rotated:null,result:null};
+    crop={photo,index,bitmap,original:source,rotation:0,flipX:1,flipY:1,result:null};
+    $('#crop-title').textContent='Edit project photo';$('#crop-file').textContent='Crop, rotate or flip this photo';$('#skip-crop').hidden=true;$('#apply-crop').textContent='Apply photo changes';
     resetCrop();$('#crop-dialog').showModal();await drawCrop();
   });
 }
 function resetCrop() {
   if(!crop)return;
-  crop.rotation=0;$('#crop-ratio').value='original';$('#crop-zoom').value='1';$('#crop-x').value=$('#crop-y').value='0.5';$('#crop-size').value='1200';$('#crop-quality').value='0.82';
+  crop.rotation=0;crop.flipX=crop.flipY=1;$('#crop-ratio').value='original';$('#crop-zoom').value='1';$('#crop-x').value=$('#crop-y').value='0.5';$('#crop-size').value='1200';$('#crop-quality').value='0.82';
 }
 function cropSource() {
   const {bitmap,rotation}=crop,canvas=document.createElement('canvas'),swap=rotation%180!==0;
   canvas.width=swap?bitmap.height:bitmap.width;canvas.height=swap?bitmap.width:bitmap.height;
-  const ctx=canvas.getContext('2d');ctx.translate(canvas.width/2,canvas.height/2);ctx.rotate(rotation*Math.PI/180);ctx.drawImage(bitmap,-bitmap.width/2,-bitmap.height/2);
+  const ctx=canvas.getContext('2d');ctx.translate(canvas.width/2,canvas.height/2);ctx.scale(crop.flipX,crop.flipY);ctx.rotate(rotation*Math.PI/180);ctx.drawImage(bitmap,-bitmap.width/2,-bitmap.height/2);
   return canvas;
 }
 async function drawCrop() {
@@ -435,6 +458,8 @@ async function drawCrop() {
 function scheduleCrop(){cropGeneration++;$('#apply-crop').disabled=true;clearTimeout(cropTimer);cropTimer=setTimeout(drawCrop,100);}
 for(const id of ['crop-ratio','crop-zoom','crop-x','crop-y','crop-size','crop-quality'])$('#'+id).addEventListener('input',scheduleCrop);
 $('#crop-rotate').addEventListener('click',()=>{crop.rotation=(crop.rotation+90)%360;scheduleCrop();});
+$('#crop-rotate-left').addEventListener('click',()=>{crop.rotation=(crop.rotation+270)%360;scheduleCrop();});
+$('#crop-flip').addEventListener('click',()=>{crop.flipX*=-1;scheduleCrop();});
 $('#crop-reset').addEventListener('click',()=>{resetCrop();scheduleCrop();});
 let pointer=null;
 $('#crop-canvas').addEventListener('pointerdown',event=>{pointer={x:event.clientX,y:event.clientY,startX:Number($('#crop-x').value),startY:Number($('#crop-y').value)};event.target.setPointerCapture(event.pointerId);});
@@ -442,13 +467,22 @@ $('#crop-canvas').addEventListener('pointermove',event=>{if(!pointer)return;cons
 $('#crop-canvas').addEventListener('pointerup',()=>pointer=null);
 $('#crop-canvas').addEventListener('pointercancel',()=>pointer=null);
 $('#apply-crop').addEventListener('click',()=>{
-  if(!crop?.result)return;
-  const photo=crop.photo,result=crop.result;delete photo.key;
+  if(!crop?.result||$('#apply-crop').disabled)return;
+  const photo=crop.photo||{label:'Project photo',filename:crop.original.name},result=crop.result;delete photo.key;
   Object.assign(photo,result,{original:crop.original,src:objectURL(result.blob)});
-  renderPhotos();changed();$('#crop-dialog').close();
+  if(crop.importing){working.photos.push(photo);selectedPhoto=working.photos.length-1;importQueue.added++;}
+  renderPhotos();changed();$('#crop-dialog').close('applied');
 });
 $('#close-crop').addEventListener('click',()=>$('#crop-dialog').close());
-$('#crop-dialog').addEventListener('close',()=>{clearTimeout(cropTimer);cropGeneration++;crop?.bitmap.close();crop=null;pointer=null;});
+$('#skip-crop').addEventListener('click',()=>$('#crop-dialog').close('skip'));
+$('#crop-dialog').addEventListener('close',()=>{
+  const importing=crop?.importing,value=$('#crop-dialog').returnValue;
+  clearTimeout(cropTimer);cropGeneration++;crop?.bitmap.close();crop=null;pointer=null;
+  if(importing&&importQueue){
+    if(value==='applied'||value==='skip'){if(value==='skip')importQueue.skipped++;importQueue.index++;void nextImportPhoto();}
+    else finishImport(true);
+  }
+});
 
 for(const category of categories){for(const select of [$('#category-filter'),$('#project-form').elements.category]){const option=el('option',category);option.value=category;select.append(option);}}
 for(const [id,handler] of [['project-search',renderProjects],['project-filter',renderProjects],['category-filter',renderProjects],['media-search',renderMedia],['search',renderInquiries],['status-filter',renderInquiries]])$('#'+id).addEventListener(id.includes('search')?'input':'change',handler);

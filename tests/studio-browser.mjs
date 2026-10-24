@@ -10,6 +10,8 @@ import worker from '../cloudflare/forms-worker.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_PACKAGE ? pathToFileURL(process.env.PLAYWRIGHT_PACKAGE).href : 'playwright');
 const root=fileURLToPath(new URL('..',import.meta.url)),out=path.join(root,'public-launch');
 const fixture=await createFixture();
+const existing=await worker.fetch(fixture.request('/admin/api/projects',{action:'save',project:{name:'Existing bathroom project',category:'Remodeling',description:'Already saved before this visit',location:'Houston',photos:[],status:'draft'}}),fixture.env,{});
+assert.equal(existing.status,200);const existingId=(await existing.json()).id;
 for(const [name,service,kind] of [['Alex Morgan','Flooring','estimate'],['Sam Taylor','Patios','contact']]){
  fixture.sql.prepare('INSERT INTO inquiries VALUES(?,?,?,?,?,?,?,?)').run(crypto.randomUUID(),kind,name,'7135550100','customer@example.test',service,JSON.stringify({description:'I would like to discuss my project.',propertyType:'Residential'}),Date.now());
 }
@@ -34,7 +36,7 @@ const screenshots=path.join(root,'preview','studio');await mkdir(screenshots,{re
 let browser;
 try{
  browser=await chromium.launch({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{}),args:['--disable-gpu']});
- const context=await browser.newContext({viewport:{width:1512,height:1050}});
+ const context=await browser.newContext({viewport:{width:1512,height:1050},reducedMotion:'reduce'});
  await context.addCookies([{name:'buildex_admin',value:fixture.token,url:origin}]);
  await context.route('https://images.pexels.com/**',route=>route.fulfill({body:png,contentType:'image/png'}));
  const page=await context.newPage(),errors=[];
@@ -50,28 +52,45 @@ try{
  await page.waitForFunction(()=>document.querySelector('#notice').textContent==='Inquiry status updated.');
  const csv=await context.request.get(origin+'/admin/api/inquiries.csv');assert.equal(csv.status(),200);assert.match(await csv.text(),/Alex Morgan/);
  await page.locator('[data-tab=projects]').click();
- await page.getByRole('button',{name:'Add project',exact:false}).first().click();
+ assert.equal(await page.locator('#project-list .project-card').count(),1,'Projects opens with existing saved projects');
+ assert.match(await page.locator('#project-list').textContent(),/Existing bathroom project/);
+ await page.getByRole('button',{name:'Add new',exact:false}).first().click();
  await page.locator('#inline-preview').waitFor({state:'visible'});
  const form=page.locator('#project-form');await form.locator('[name=name]').fill('Sugar Land patio renovation');
  await form.locator('[name=category]').selectOption('Patios');
  await form.locator('[name=location]').fill('Sugar Land, TX');await form.locator('[name=description]').fill('A calm outdoor retreat with room for the whole family.');
  const image=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=1500;c.height=1000;const x=c.getContext('2d'),g=x.createLinearGradient(0,0,1500,1000);g.addColorStop(0,'#9fb7b7');g.addColorStop(1,'#304953');x.fillStyle=g;x.fillRect(0,0,1500,1000);x.fillStyle='#cbd1c5';x.fillRect(200,250,1000,580);x.fillStyle='#193b49';x.fillRect(320,320,330,400);x.fillRect(710,320,360,400);x.fillStyle='#e3ddc9';x.fillRect(150,800,1100,80);return c.toDataURL('image/png').split(',')[1];});
  await page.locator('#photo-upload').setInputFiles([{name:'Completed patio.png',mimeType:'image/png',buffer:Buffer.from(image,'base64')},{name:'Patio detail.png',mimeType:'image/png',buffer:Buffer.from(image,'base64')}]);
- await page.locator('.photo-card').nth(1).waitFor();
- await page.getByRole('button',{name:'Crop & resize'}).first().click();
  await page.locator('#crop-dialog').waitFor({state:'visible'});
+ assert.equal(await page.locator('.photo-card').count(),0,'Photo editor opens before importing photos');
+ assert.equal(await page.locator('#crop-title').textContent(),'Edit photo 1 of 2');
+ await page.locator('#crop-rotate').click();await page.locator('#crop-rotate-left').click();
+ await page.locator('#crop-flip').click();await page.locator('#crop-flip').click();
  await page.locator('#crop-ratio').selectOption('1');
  await page.locator('#crop-size').selectOption('800');
  await page.locator('#crop-zoom').fill('1.4');await page.locator('#crop-x').fill('0.7');
  await page.waitForFunction(()=>!document.querySelector('#apply-crop').disabled);
  await page.screenshot({path:path.join(screenshots,'photo-editor.png')});
  await page.locator('#apply-crop').click();
+ await page.waitForFunction(()=>document.querySelector('#crop-title').textContent==='Edit photo 2 of 2');
+ await page.locator('#crop-rotate').click();
+ await page.waitForFunction(()=>!document.querySelector('#apply-crop').disabled);
+ assert.match(await page.locator('#crop-output').textContent(),/800 × 1200/);
+ await page.locator('#apply-crop').click();await page.locator('#crop-dialog').waitFor({state:'hidden'});
+ await page.locator('.photo-card').first().click();
  assert.match(await page.locator('.photo-meta').first().textContent(),/714 × 714/);
+ assert.equal(await page.locator('.photo-details').count(),0,'The project has one shared caption, no individual photo captions');
+ const oldCover=await page.locator('.photo-card img').first().getAttribute('src');
+ await page.locator('.photo-card').nth(1).dragTo(page.locator('.photo-card').first());
+ assert.notEqual(await page.locator('.photo-card img').first().getAttribute('src'),oldCover,'Drag and drop changes the cover');
+ assert.match(await page.locator('.photo-meta').first().textContent(),/800 × 1200/);
+ await page.evaluate(()=>window.scrollTo(0,0));
  const inline=page.frameLocator('#inline-preview');
  await inline.locator('.media-card').first().waitFor();
  assert.equal(await inline.locator('.media-card').count(),1,'Multiple photos stay in one project album');
  assert.equal(await inline.locator('.media-title').first().textContent(),'Sugar Land patio renovation');
- await inline.locator('.media-card').first().click();await inline.locator('#media-viewer').waitFor({state:'visible'});assert.match(await inline.locator('#media-position').textContent(),/1 \/ 2/);await inline.locator('#media-next').click();assert.match(await inline.locator('#media-position').textContent(),/2 \/ 2/);await inline.locator('#media-close').click();
+ const inlineCard=inline.locator('.media-card').first();await inlineCard.locator('.album-next').click();assert.equal(await inlineCard.locator('.album-carousel').getAttribute('data-photo-index'),'1');
+ await inlineCard.locator('.album-open').click();await inline.locator('#media-viewer').waitFor({state:'visible'});assert.match(await inline.locator('#media-position').textContent(),/2 \/ 2/);await inline.locator('#media-prev').click();assert.match(await inline.locator('#media-position').textContent(),/1 \/ 2/);await inline.locator('#media-close').click();
  await page.evaluate(()=>window.scrollTo(0,0));
  await page.screenshot({path:path.join(screenshots,'project-editor.png'),fullPage:true});
  let uploads=0;
@@ -84,6 +103,15 @@ try{
  await page.locator('#publish-project').click();await page.locator('#confirm-ok').click();
  await page.waitForFunction(()=>document.querySelector('#notice').textContent.startsWith('Project published.'));
  assert.equal((await(await fetch(origin+'/api/projects')).json())[0].name,'Sugar Land patio renovation');
+ assert.equal((await(await fetch(origin+'/api/projects')).json())[0].photos[0].height,1200,'Cover ordering and orientation are saved');
+ const publicPage=await context.newPage();await publicPage.goto(origin+'/projects.html');
+ await publicPage.locator('.media-card .album-open').first().waitFor();assert.equal(await publicPage.locator('.media-card').count(),1);
+ await publicPage.locator('.media-card .album-next').click();await publicPage.locator('.media-card .album-open').click();
+ assert.match(await publicPage.locator('#media-position').textContent(),/2 \/ 2/);await publicPage.locator('#media-prev').click();
+ assert.match(await publicPage.locator('#media-position').textContent(),/1 \/ 2/);
+ const left=await publicPage.locator('#media-prev').boundingBox(),right=await publicPage.locator('#media-next').boundingBox(),stage=await publicPage.locator('#media-stage').boundingBox();
+ assert(left.x-stage.x<30&&stage.x+stage.width-right.x-right.width<30,'Popup arrows are at opposite image edges');
+ await publicPage.screenshot({path:path.join(screenshots,'public-project-album.png')});await publicPage.close();
  // Save private changes to an already published project, then verify the live row.
  await form.locator('[name=name]').fill('Private new project title');
  await page.locator('#save-draft').click();await page.waitForFunction(()=>document.querySelector('#notice').textContent.startsWith('Draft saved.'));
@@ -100,6 +128,7 @@ try{
  // Local recovery includes pending text edits after a reload.
  await form.locator('[name=description]').fill('Recovered on this device');
  await page.locator('#photo-upload').setInputFiles([{name:'Unsaved extra.png',mimeType:'image/png',buffer:Buffer.from(image,'base64')}]);
+ await page.locator('#crop-dialog').waitFor({state:'visible'});await page.waitForFunction(()=>!document.querySelector('#apply-crop').disabled);await page.locator('#apply-crop').click();await page.locator('#crop-dialog').waitFor({state:'hidden'});
  await page.locator('.photo-card').nth(2).waitFor();
  await page.waitForFunction(()=>document.querySelector('#edit-state').textContent.includes('Recoverable'));
  page.once('dialog',dialog=>dialog.accept());
@@ -108,6 +137,12 @@ try{
  assert.equal(await page.locator('.photo-card').count(),3);
  assert(await page.locator('.photo-card img').last().evaluate(image=>image.complete&&image.naturalWidth>0),'Local photo blobs recover too');
  await page.locator('#back-projects').click();await page.locator('#confirm-ok').click();
+ assert.equal(await page.locator('#project-list .project-card').count(),2,'Saved projects are retained alongside new posts');
+ const posted=page.locator('.project-card').filter({hasText:'Private new project title'});
+ await posted.locator('.album-next').click();await posted.locator('.album-open').click();await page.locator('#project-viewer').waitFor({state:'visible'});
+ assert.match(await page.locator('#project-viewer-position').textContent(),/2 \/ 2/);await page.locator('#project-viewer-prev').click();assert.match(await page.locator('#project-viewer-position').textContent(),/1 \/ 2/);
+ await page.screenshot({path:path.join(screenshots,'admin-project-album.png')});await page.locator('#project-viewer-close').click();
+ await page.screenshot({path:path.join(screenshots,'project-collection.png'),fullPage:true});
  // Empty editor no longer gates project preview behind required-field validation.
  await page.locator('#global-preview').click();await page.frameLocator('#website-preview').locator('.media-card').first().waitFor();await page.locator('#close-preview').click();
  await page.locator('[data-tab=overview]').click();
@@ -119,12 +154,31 @@ try{
  }
  await page.locator('[data-tab=overview]').click();
  await page.screenshot({path:path.join(screenshots,'overview-mobile.png'),fullPage:true});
- await page.locator('[data-tab=projects]').click();await page.getByRole('button',{name:'Edit project →'}).first().click();
+ await page.locator('[data-tab=projects]').click();await page.locator('.project-card').filter({hasText:'Private new project title'}).getByRole('button',{name:'Edit project →'}).click();
  await page.frameLocator('#inline-preview').locator('.media-card').first().waitFor();
  assert.equal(await page.locator('[data-inline-size=mobile]').getAttribute('aria-pressed'),'true');
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'Horizontal overflow in mobile editor');
  await page.screenshot({path:path.join(screenshots,'editor-mobile.png'),fullPage:true});
+ // Returning via the Projects navigation always shows the saved collection.
+ await page.locator('[data-tab=projects]').click();await page.locator('#project-collection').waitFor({state:'visible'});
+ await page.getByRole('button',{name:'Add new',exact:false}).first().click();
+ await page.locator('#photo-upload').setInputFiles([{name:'Skip.png',mimeType:'image/png',buffer:Buffer.from(image,'base64')},{name:'Cancel.png',mimeType:'image/png',buffer:Buffer.from(image,'base64')}]);
+ await page.locator('#crop-dialog').waitFor({state:'visible'});await page.screenshot({path:path.join(screenshots,'photo-editor-mobile.png')});
+ await page.locator('#skip-crop').click();await page.waitForFunction(()=>document.querySelector('#crop-title').textContent==='Edit photo 2 of 2');
+ await page.keyboard.press('Escape');await page.locator('#crop-dialog').waitFor({state:'hidden'});
+ await page.waitForFunction(()=>!document.querySelector('#photo-upload').disabled);
+ assert.equal(await page.locator('.photo-card').count(),0);assert.equal(await page.locator('#photo-upload').isEnabled(),true,'Cancel releases the import queue');
+ await page.locator('#back-projects').click();await page.locator('#project-collection').waitFor({state:'visible'});
+ await page.locator('.project-card').filter({hasText:'Private new project title'}).locator('.album-open').click();await page.locator('#project-viewer').waitFor({state:'visible'});
+ await page.locator('#project-viewer-next').click();assert.match(await page.locator('#project-viewer-position').textContent(),/2 \/ 2/);
+ assert(await page.locator('#project-viewer').evaluate(dialog=>dialog.scrollWidth<=dialog.clientWidth+1),'Mobile album has no horizontal overflow');
+ await page.screenshot({path:path.join(screenshots,'project-album-mobile.png')});await page.locator('#project-viewer-close').click();
+ assert.equal(fixture.sql.prepare('SELECT name FROM projects WHERE id=?').get(existingId).name,'Existing bathroom project','Existing projects are preserved');
  assert.deepEqual(errors.filter(error=>!error.includes('503')),[]);
  console.log('PASS: actual Worker + SQLite, upload, crop, inline lightbox, draft privacy, publish, all seven previews, preview navigation, recovery, empty-editor preview, desktop and mobile layout; no JS/CSP errors.');
  console.log('Screenshots: '+screenshots);
+}catch(error){
+ const page=browser?.contexts()[0]?.pages()[0];
+ if(page)await page.screenshot({path:path.join(screenshots,'failure.png'),fullPage:true}).catch(()=>{});
+ throw error;
 }finally{await browser?.close();await new Promise(resolve=>server.close(resolve));fixture.sql.close();}

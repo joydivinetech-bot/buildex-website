@@ -4,7 +4,7 @@ const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');const
 // Remove only known generated backend artifacts when switching back to a static build.
 for(const file of ['_worker.js','_routes.json','forms.js'])await unlink(path.join(out,file)).catch(error=>{if(error.code!=='ENOENT')throw error;});
 const pages=['index','services','flooring','estimate','contact','about','projects'];
-for(const file of [...pages.map(p=>p+'.html'),'styles.css','site.js','projects.css','projects.js','buildex-logo.png','favicon.svg']){
+for(const file of [...pages.map(p=>p+'.html'),'styles.css','site.js','projects.css','projects.js','album-ui.js','album-ui.css','buildex-logo.png','favicon.svg']){
  if(file.endsWith('.png')){await copyFile(path.join(root,'public',file),path.join(out,file));continue;}
  let s=await readFile(path.join(root,'public',file),'utf8');
  if(file.endsWith('.html')){

@@ -4,16 +4,16 @@ The production dashboard is served by cloudflare/forms-worker.mjs at /admin. It 
 
 ## Everyday workflow
 
-1. Open Projects and choose Add project or Edit project.
+1. Open Projects to see all saved project posts. Browse photos directly on each card, click a photo for the large album viewer, or choose Edit project. Add new starts a separate project post.
 2. Use Add photos to select several photos together, or add more in later batches to the same album. Each project supports up to 20 JPG, PNG or WebP photos, with originals up to 8 MB each.
-3. Select a thumbnail to crop, rotate or resize that photo. Drag thumbnails to reorder, use Move earlier / Move later, or choose Make cover. Photo description expands the accessibility text editor.
-4. Fill in the project title, caption, category and location below the album.
+3. The photo editor opens automatically for each selected file. Crop, rotate left/right, flip or resize, then choose Add photo & next. Skip photo omits that file; closing the editor cancels the remaining selection and keeps the photos already accepted. No files upload during this step.
+4. Drag thumbnails to reorder; the first photo becomes the cover. Move earlier / Move later and Make cover are also available. Fill in one project title and caption, category and location below the album. There are no individual photo captions.
 5. Watch the live project-page preview alongside the editor. Preview website opens all seven pages at desktop, tablet or mobile widths.
 6. Save draft to store the work privately. Publish project / Publish changes updates the public gallery only after confirmation.
 
 Photo library searches saved photography and opens the owning project for editing. Inquiries supports searching, status changes, inquiry details, call/email links and CSV export.
 
-The public gallery and live preview show one card per project. Opening a project displays its photo album with thumbnails and previous/next controls, rather than creating a separate project card for every photo.
+The Studio collection, public gallery and live preview show one card per project. Album cards have previous/next buttons, position indicators and swipe support. Opening a project displays its large photo viewer with buttons at the left and right image edges, thumbnails, keyboard arrows and one shared project caption. All three surfaces use album-ui.js and album-ui.css.
 
 ## Draft and photo behavior
 
