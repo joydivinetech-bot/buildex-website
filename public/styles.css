@@ -490,6 +490,12 @@ p{color:#536579}
 .contact-details .additional-phones{display:grid;gap:4px;margin-top:4px}
 .contact-details a:hover{text-decoration:underline}
 .about-story{padding-top:20px}
+.partner-card{display:grid;grid-template-columns:280px 1fr;align-items:center;gap:48px;padding:40px;border:1px solid #d5e0eb;border-radius:8px;background:#fff;margin-top:24px}
+.partner-logo{display:flex;align-items:center;justify-content:center;min-height:160px;padding:20px}
+.partner-logo img{display:block;width:100%;height:auto;max-height:160px;object-fit:contain}
+.partner-card h2{margin-top:0;margin-bottom:16px}
+.partner-card p{max-width:560px;margin-bottom:24px}
+@media(max-width:700px){.partner-card{grid-template-columns:1fr;gap:24px;padding:28px}.partner-logo{width:240px;max-width:100%;min-height:0;padding:12px 0}.partner-card h2{font-size:32px}}
 .about-experience{padding:45px 25px;background:#edf3f9;text-align:center;color:#0b2948}
 .about-experience strong{display:block;font-size:clamp(80px,12vw,150px);line-height:1.1;font-weight:500;letter-spacing:-5px}
 .about-experience span{font-size:11px;letter-spacing:2px}
