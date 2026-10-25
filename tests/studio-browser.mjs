@@ -152,7 +152,7 @@ try{
    const box=card.getBoundingClientRect(),photo=card.querySelector('.album-carousel').getBoundingClientRect(),copy=card.querySelector('.project-card-copy').getBoundingClientRect();
    return {x:box.x,y:box.y,width:box.width,height:box.height,photoX:photo.x,copyX:copy.x,photoY:photo.y,copyY:copy.y};
  }));
- for(let i=0;i<rows.length;i++){assert(rows[i].height>=440,'Desktop project rows are taller');assert(rows[i].photoX<rows[i].copyX,'Photo left and details right');assert(Math.abs(rows[i].photoY-rows[i].copyY)<2);if(i)assert(rows[i].y>=rows[i-1].y+rows[i-1].height,'Projects stack as full-width rows');}
+ for(let i=0;i<rows.length;i++){assert(rows[i].height>=440,'Desktop project rows are taller');assert(i%2?rows[i].photoX>rows[i].copyX:rows[i].photoX<rows[i].copyX,'Project rows alternate photo sides');assert(Math.abs(rows[i].photoY-rows[i].copyY)<2);if(i)assert(rows[i].y>=rows[i-1].y+rows[i-1].height,'Projects stack as full-width rows');}
  assert.equal(await layoutPage.locator('.album-playback').count(),0,'The visible pause icon is removed');
  const carousel=layoutPage.locator('.album-carousel').first();await carousel.scrollIntoViewIfNeeded();
  assert.equal(await carousel.locator('.album-dot').count(),4,'One progress dot per photo');

@@ -18,6 +18,7 @@
 .project-list .project-card-copy h2{font-size:clamp(28px,2.8vw,40px);line-height:1.2;margin-bottom:20px}
 .project-list .project-card-copy p{font-size:16px;line-height:1.8;margin-bottom:24px}
 .project-list .project-card-copy .text-link{align-self:flex-start}
+@media(min-width:761px){.project-list>.project-service-card:nth-child(even){grid-template-columns:minmax(0,.95fr) minmax(0,1.05fr)}.project-list>.project-service-card:nth-child(even)>.album-carousel{order:2}.project-list>.project-service-card:nth-child(even)>.project-card-copy{order:1}}
 .media-title{font:inherit;letter-spacing:inherit;border:0;background:transparent;color:inherit;padding:0;text-align:left;cursor:zoom-in}
 .project-card-description{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:5;overflow:hidden;white-space:pre-line}
 .project-card-copy>.text-link{padding:0;border:0;background:transparent;cursor:zoom-in}
