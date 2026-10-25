@@ -163,12 +163,42 @@ function renderOverview() {
 }
 const projectAlbum=project=>({...project,title:project.name,photos:project.photos.map(photo=>({src:photoURL(photo)}))});
 const projectViewer=albumViewer($('#project-viewer'),{prefix:'project-viewer',edit:project=>editProject(projects.find(item=>item.id===project.id))});
+let projectView='grid';try{if(localStorage.getItem('buildex-project-view')==='list')projectView='list';}catch{}
+function setProjectView(view){
+  projectView=view;$('#project-list').dataset.view=view;
+  $$('[data-project-view]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.projectView===view)));
+  try{localStorage.setItem('buildex-project-view',view);}catch{}
+}
+$$('[data-project-view]').forEach(button=>button.addEventListener('click',()=>setProjectView(button.dataset.projectView)));
+let projectDrag=null;
+function finishProjectDrag(event,cancelled=false){
+  if(!projectDrag||event.pointerId!==projectDrag.pointerId)return;
+  const drag=projectDrag;projectDrag=null;
+  $$('#project-list .project-card').forEach(card=>card.classList.remove('project-dragging','project-drop-target'));
+  if(!cancelled&&drag.moved&&drag.target&&drag.target!==drag.id){
+    void reorderProject(projects.findIndex(p=>p.id===drag.id),projects.findIndex(p=>p.id===drag.target));
+  }
+}
+addEventListener('pointermove',event=>{
+  if(!projectDrag||event.pointerId!==projectDrag.pointerId)return;
+  const drag=projectDrag;if(Math.hypot(event.clientX-drag.x,event.clientY-drag.y)<6&&!drag.moved)return;
+  drag.moved=true;event.preventDefault();
+  const card=document.elementFromPoint(event.clientX,event.clientY)?.closest('#project-list .project-card');
+  drag.target=card?.dataset.projectId;
+  $$('#project-list .project-card').forEach(item=>item.classList.toggle('project-drop-target',item===card&&item.dataset.projectId!==drag.id));
+  if(event.clientY<90)window.scrollBy(0,-24);else if(event.clientY>innerHeight-90)window.scrollBy(0,24);
+},{passive:false});
+addEventListener('pointerup',event=>finishProjectDrag(event));
+addEventListener('pointercancel',event=>finishProjectDrag(event,true));
+addEventListener('keydown',event=>{if(event.key==='Escape'&&projectDrag)finishProjectDrag({pointerId:projectDrag.pointerId},true);});
 function renderProjects() {
+  setProjectView(projectView);
   const query = $('#project-search').value.toLowerCase(), filter = $('#project-filter').value, category = $('#category-filter').value;
   const selected = projects.filter(p => (!query || [p.name,p.location].join(' ').toLowerCase().includes(query)) && (filter === 'all' || (filter === 'changes' ? p.hasDraft : p.status === filter)) && (category === 'all' || p.category === category));
   const list = $('#project-list'); list.replaceChildren(); $('#project-results').textContent = selected.length + ' projects';
   for (const project of selected) {
     const card = el('article', '', 'project-card'), image = el('div', '', 'project-image');
+    card.dataset.projectId=project.id;
     if (project.photos.length) {const album=projectAlbum(project);image.append(albumCard(album,(index,trigger)=>projectViewer.open(album,index,trigger)));}
     else image.append(el('span','▧'));
     image.append(badge(project));
@@ -178,11 +208,23 @@ function renderProjects() {
     const actions = el('div','','card-actions'), move = el('div','','move'), index = projects.indexOf(project);
     actions.append(action('Edit project →', () => editProject(project)), action('Delete', () => deleteProject(project), 'text-button danger-text'));
     for (const [label,to] of [['↑',index-1],['↓',index+1]]) {const button = action(label, () => reorderProject(index,to)); button.disabled = to<0 || to>=projects.length; button.setAttribute('aria-label',(label==='↑'?'Move earlier: ':'Move later: ') + project.name); move.append(button);}
-    actions.append(move); copy.append(meta,actions); card.append(image,copy); list.append(card);
+    const handle=action('⠿',()=>{},'project-drag-handle');handle.setAttribute('aria-label','Drag to reorder: '+project.name);handle.title='Drag to reorder · Arrow keys move earlier or later';
+    handle.addEventListener('pointerdown',event=>{
+      if(busy||event.button!==0)return;
+      projectDrag={id:project.id,pointerId:event.pointerId,x:event.clientX,y:event.clientY,moved:false,target:null};
+      handle.setPointerCapture(event.pointerId);card.classList.add('project-dragging');
+    });
+    handle.addEventListener('keydown',event=>{
+      const direction=['ArrowUp','ArrowLeft'].includes(event.key)?-1:['ArrowDown','ArrowRight'].includes(event.key)?1:0;
+      if(!direction||busy)return;event.preventDefault();const from=projects.findIndex(p=>p.id===project.id),to=from+direction;
+      if(to>=0&&to<projects.length)void reorderProject(from,to);
+    });
+    actions.append(move); copy.append(meta,actions); card.append(image,copy,handle); list.append(card);
   }
   if (!selected.length) empty(list,'No projects to show', projects.length ? 'Try another search or filter.' : 'Add a project, choose your photos and preview it before publishing.');
 }
 async function reorderProject(from,to) {
+  if(busy||from<0||to<0||from===to||to>=projects.length)return;
   if (!await confirmAction('Change project order?', 'This updates the order of published projects on the website.', 'Update order')) return;
   await run(async () => {const ordered = [...projects], [item] = ordered.splice(from,1); ordered.splice(to,0,item); await post('/admin/api/projects',{action:'reorder',ids:ordered.map(p=>p.id)}); projects = ordered; renderProjects(); sendPreviews(); notice('Project order updated.');});
 }

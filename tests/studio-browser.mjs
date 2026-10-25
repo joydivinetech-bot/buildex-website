@@ -245,6 +245,23 @@ try{
  await page.locator('#project-viewer-next').click();assert.match(await page.locator('#project-viewer-position').textContent(),/2 \/ 2/);
  assert(await page.locator('#project-viewer').evaluate(dialog=>dialog.scrollWidth<=dialog.clientWidth+1),'Mobile album has no horizontal overflow');
  await page.screenshot({path:path.join(screenshots,'project-album-mobile.png')});await page.locator('#project-viewer-close').click();
+
+ // Admin-only collection views and arbitrary drag ordering both persist correctly.
+ await page.setViewportSize({width:1512,height:1050});
+ for(const view of ['grid','list']){
+   await page.locator('[data-project-view='+view+']').click();
+   assert.equal(await page.locator('#project-list').getAttribute('data-view'),view);
+   const ids=await page.locator('#project-list .project-card').evaluateAll(cards=>cards.map(c=>c.dataset.projectId));
+   const handle=page.locator('#project-list .project-card').first().locator('.project-drag-handle');
+   await handle.scrollIntoViewIfNeeded();const start=await handle.boundingBox(),target=await page.locator('#project-list .project-card').last().boundingBox();
+   await page.mouse.move(start.x+start.width/2,start.y+start.height/2);await page.mouse.down();await page.mouse.move(target.x+target.width/2,target.y+target.height/2,{steps:12});await page.mouse.up();
+   await page.locator('#confirm-dialog').waitFor({state:'visible'});await page.locator('#confirm-ok').click();
+   await page.waitForFunction(id=>document.querySelector('#project-list .project-card:last-child').dataset.projectId===id,ids[0]);
+   const saved=await (await context.request.get(origin+'/admin/api/site')).json();assert.equal(saved.projects.at(-1).id,ids[0],'Drag order is saved');
+   await page.screenshot({path:path.join(screenshots,'collection-'+view+'.png'),fullPage:true});
+ }
+ await page.reload();await page.locator('#project-collection').waitFor({state:'visible'});assert.equal(await page.locator('#project-list').getAttribute('data-view'),'list','View preference survives reload');
+ await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:path.join(screenshots,'collection-list-mobile.png'),fullPage:true});
  assert.equal(fixture.sql.prepare('SELECT name FROM projects WHERE id=?').get(existingId).name,'Existing bathroom project','Existing projects are preserved');
  assert.deepEqual(errors.filter(error=>!error.includes('503')),[]);
  console.log('PASS: actual Worker + SQLite, upload, crop, inline lightbox, draft privacy, publish, all seven previews, preview navigation, recovery, empty-editor preview, desktop and mobile layout; no JS/CSP errors.');
