@@ -56,7 +56,7 @@ if (results) {
       })).filter(project=>project.photos.length);
     };
     render=()=>{
-      const items=albums(),visible=items.filter(project=>filter==='All'||project.category===filter);
+      const items=albums(),visible=items.filter(project=>filter==='All'||project.category===filter).slice(0,2);
       results.replaceChildren();
       if(!visible.length){
         const empty=text('div','','gallery-empty');

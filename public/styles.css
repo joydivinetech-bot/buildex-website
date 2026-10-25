@@ -621,3 +621,5 @@ select:focus-visible{outline:2px solid #245b89;outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.hero-slide{transition:none}.hero-slide:not(.is-active){display:none}}
 
 .service-photo-placeholder{min-height:280px;display:grid;place-items:center;background:#edf3f8;color:#536579}
+
+.project-gallery-more{display:flex;justify-content:center;margin-top:32px}
