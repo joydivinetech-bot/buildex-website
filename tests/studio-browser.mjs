@@ -205,7 +205,7 @@ try{
  await page.waitForFunction(()=>document.querySelector('#edit-state').textContent.includes('Recoverable'));
  page.once('dialog',dialog=>dialog.accept());
  await page.reload();await page.locator('#restore-edit').waitFor();await page.locator('#restore-edit').click();
- assert.equal(await page.locator('[name=description]').inputValue(),'Recovered on this device');
+ assert.equal(await page.locator('#project-form [name=description]').inputValue(),'Recovered on this device');
  assert.equal(await page.locator('.photo-card').count(),3);
  assert(await page.locator('.photo-card img').last().evaluate(image=>image.complete&&image.naturalWidth>0),'Local photo blobs recover too');
  await page.locator('#back-projects').click();await page.locator('#confirm-ok').click();

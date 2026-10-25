@@ -1,3 +1,4 @@
+import {serviceState,saveServices} from './services.mjs';
 import {verifyAdminSession} from './admin-auth.mjs';
 
 const categories=['Flooring','Patios','Outdoor Kitchens','Concrete','Remodeling','Handyman','MEP','Other'];
@@ -48,13 +49,14 @@ async function readUpload(request,env,user){const type=request.headers.get('cont
 export async function handlePublicSite(request,env,ctx={}){
  try{
   await ensure(env.DB);const url=new URL(request.url);
+  if(url.pathname==='/api/services'&&request.method==='GET')return json((await serviceState(env.DB)).published);
   if(url.pathname==='/api/projects'&&request.method==='GET')return json(await projects(env.DB));
   if(url.pathname==='/api/settings'&&request.method==='GET')return json(await settings(env.DB));
   if(url.pathname!=='/api/media'||!['GET','HEAD'].includes(request.method))fail(404,'Not found.');
   const key=url.searchParams.get('key')||'';
   const photo=await env.DB.prepare('SELECT photos.*,projects.status,projects.photos AS public_photos FROM photos LEFT JOIN projects ON projects.id=photos.project_id WHERE photos.key=?').bind(key).first();
   if(!photo)fail(404,'Photo not found.');
-  const visible=photo.status==='published'&&JSON.parse(photo.public_photos||'[]').some(item=>item.key===key);
+  const visible=(photo.status==='published'&&JSON.parse(photo.public_photos||'[]').some(item=>item.key===key))||(!photo.project_id&&(await serviceState(env.DB)).published.some(service=>service.image?.key===key));
   if(!visible){try{await verifyAdminSession(request,env);}catch{fail(404,'Photo not found.');}}
   // Validate publication before both browser revalidation and the edge cache.
   const etag='"'+photo.filename+'"';
@@ -85,6 +87,8 @@ export async function handlePublicSite(request,env,ctx={}){
 
 export async function handleSiteAdmin(request,env,authorizer=verifyAdminSession){try{const url=new URL(request.url);if(url.origin!==env.ADMIN_ORIGIN)fail(404,'Not found.');const user=await authorizer(request,env);await ensure(env.DB);if(request.method==='POST'&&request.headers.get('origin')!==url.origin)fail(403,'Invalid request origin.');
  if(url.pathname==='/admin/api/media'&&['GET','HEAD'].includes(request.method)){const key=url.searchParams.get('key')||'',photo=await env.DB.prepare('SELECT mime FROM photos WHERE key=?').bind(key).first();if(!photo)fail(404,'Photo not found.');let payload,size;if(env.MEDIA){const object=await env.MEDIA.get(key);if(!object)fail(404,'Photo not found.');payload=object.body;size=object.size;}else{const stored=await env.DB.prepare('SELECT data FROM photo_data WHERE key=?').bind(key).first();if(!stored)fail(404,'Photo not found.');payload=fromBase64(stored.data);size=payload.byteLength;}return new Response(request.method==='HEAD'?null:payload,{headers:{'Content-Type':photo.mime,'Content-Length':String(size),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});}
+ if(url.pathname==='/admin/api/services'&&request.method==='GET')return json(await serviceState(env.DB));
+ if(url.pathname==='/admin/api/services'&&request.method==='POST')return json(await saveServices(env.DB,await body(request,250000)));
  if(url.pathname==='/admin/api/site'&&request.method==='GET')return json({user,projects:await projects(env.DB,true),settings:await settings(env.DB),storageConfigured:true,storageMode:env.MEDIA?'r2':'database'});
  if(url.pathname==='/admin/api/projects/upload'&&request.method==='POST')return json(await readUpload(request,env,user),201);
  if(url.pathname==='/admin/api/settings'&&request.method==='POST'){const value=cleanSettings(await body(request));await env.DB.prepare('INSERT INTO settings(id,value) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').bind('site',JSON.stringify(value)).run();return json({ok:true,settings:value});}
@@ -125,6 +129,7 @@ export async function handleSiteAdmin(request,env,authorizer=verifyAdminSession)
    if(!photo||typeof photo.key!=='string'||!str(photo.label,150)||keys.has(photo.key))fail(400,'Use unique photos with descriptions.');
    const stored=await env.DB.prepare('SELECT project_id FROM photos WHERE key=?').bind(photo.key).first();
    if(!stored||stored.project_id&&stored.project_id!==id)fail(400,'A project photo is unavailable.');
+   if(!stored.project_id){const services=await serviceState(env.DB);if([...services.published,...(services.draft||[])].some(service=>service.image?.key===photo.key))fail(400,'This photo belongs to a service. Upload a separate copy for the project.');}
    keys.add(photo.key);
   }
   const dimension=value=>Number.isInteger(value)&&value>0&&value<=30000?value:undefined;

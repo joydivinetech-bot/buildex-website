@@ -209,3 +209,6 @@ if (navigation && menuButton) {
     delay += 160;
   });
 })();
+
+// Services use the published collection, with private local previews in Studio.
+if(onWeb)import('./services-ui.js').catch(()=>{});

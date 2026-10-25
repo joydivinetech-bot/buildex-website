@@ -1,3 +1,4 @@
+import {initServices} from './services-admin.js';
 import {categories, pages, cropRect, formatBytes, photoMetadata, previewCollection} from './cms-utils.js';
 import {albumCard,albumViewer} from './album-ui.js';
 
@@ -88,10 +89,10 @@ function updateEditorState() {
   $('#discard-draft').hidden = !working?.hasDraft;
 }
 function openTab(name) {
-  if (!['overview','projects','media','inquiries'].includes(name)) name = 'overview';
+  if (!['overview','projects','services','media','inquiries'].includes(name)) name = 'overview';
   $$('[data-panel]').forEach(panel => panel.hidden = panel.dataset.panel !== name);
   $$('[data-tab]').forEach(button => {button.classList.toggle('active', button.dataset.tab === name); button.setAttribute('aria-current', button.dataset.tab === name ? 'page' : 'false');});
-  $('#section-name').textContent = {overview:'Overview', projects:'Projects', media:'Photo library', inquiries:'Inquiries'}[name];
+  $('#section-name').textContent = {overview:'Overview', projects:'Projects', services:'Services', media:'Photo library', inquiries:'Inquiries'}[name];
   history.replaceState(null, '', '#' + name);
   if (name === 'projects' && working) requestAnimationFrame(sizeInline);
 }
@@ -109,6 +110,7 @@ function showLogin(message) {
 }
 async function load(initial = false) {
   const [site, inbox] = await Promise.all([api('/admin/api/site'), api('/admin/api/inquiries')]);
+  await servicesAdmin.load();
   user = site.user.email; projects = site.projects; inquiries = inbox.inquiries;
   storageMode = site.storageMode || 'database'; authLost = false;
   $('#account').textContent = user; $('#dashboard').hidden = false; $('#login').hidden = true;
@@ -133,8 +135,8 @@ $('#code-form').addEventListener('submit', async event => {
   finally {button.disabled = false;}
 });
 $('#sign-out').addEventListener('click', async () => {
-  if (busy || dirty && !await confirmAction('Sign out?', 'Your unfinished edit will be removed from this device. Save a draft first if you want to keep it.', 'Sign out')) return;
-  await run(async () => {await post('/admin/api/auth/logout', {}); await clearRecovery(); releaseEditor(); working = null; inquiries = []; projects = []; $('#code-form').hidden = true; showLogin('Signed out securely.');});
+  if (busy || (dirty||servicesAdmin.dirty) && !await confirmAction('Sign out?', 'Your unfinished edit will be removed from this device. Save a draft first if you want to keep it.', 'Sign out')) return;
+  await run(async () => {await post('/admin/api/auth/logout', {}); await clearRecovery(); releaseEditor(); servicesAdmin.reset(); working = null; inquiries = []; projects = []; $('#code-form').hidden = true; showLogin('Signed out securely.');});
 });
 $('#refresh').addEventListener('click', () => run(async () => {await load(); notice('Workspace refreshed.');}));
 $('#mobile-sign-out').addEventListener('click',()=>$('#sign-out').click());
@@ -163,6 +165,7 @@ function renderOverview() {
 }
 const projectAlbum=project=>({...project,title:project.name,photos:project.photos.map(photo=>({src:photoURL(photo)}))});
 const projectViewer=albumViewer($('#project-viewer'),{prefix:'project-viewer',edit:project=>editProject(projects.find(item=>item.id===project.id))});
+const servicesAdmin=initServices({api,post,run,confirmAction,notice,preview:sendPreviews,openPhoto:openServicePhoto});
 let projectView='grid';try{if(localStorage.getItem('buildex-project-view')==='list')projectView='list';}catch{}
 function setProjectView(view){
   projectView=view;$('#project-list').dataset.view=view;
@@ -456,8 +459,8 @@ function previewPayload() {
   return previewCollection(projects,draft).map(project=>({...project,published:undefined,photos:project.photos.map(photo=>({key:photo.key,label:photo.label,src:photoURL(photo)}))}));
 }
 function sendPreviews() {
-  const payload={type:'buildex-preview',projects:previewPayload()};
-  for(const frame of [$('#inline-preview'),$('#website-preview')])if(frame.getAttribute('src'))frame.contentWindow?.postMessage(payload,location.origin);
+  const payload={type:'buildex-preview',projects:previewPayload(),services:servicesAdmin.preview()};
+  for(const frame of [$('#inline-preview'),$('#website-preview'),$('#services-preview')])if(frame.getAttribute('src'))frame.contentWindow?.postMessage(payload,location.origin);
 }
 function sizeInline() {
   const viewport=$('#inline-viewport'),frame=$('#inline-preview');if(!working||viewport.clientWidth===0)return;
@@ -474,14 +477,14 @@ function openPreview(page=currentPage) {
   $('#website-preview').src='/admin/preview?page='+page;
   if(!$('#preview-dialog').open)$('#preview-dialog').showModal();
 }
-$('#global-preview').addEventListener('click',()=>openPreview(location.hash==='#projects'?'projects':'home'));
+$('#global-preview').addEventListener('click',()=>openPreview(location.hash==='#services'?'services':location.hash==='#projects'?'projects':'home'));
 $('#preview-page').addEventListener('change',event=>openPreview(event.target.value));
 $('#close-preview').addEventListener('click',()=>$('#preview-dialog').close());
 $('#preview-dialog').addEventListener('close',()=>$('#website-preview').removeAttribute('src'));
 $$('[data-preview-size]').forEach(button=>button.addEventListener('click',()=>{$('#preview-viewport').dataset.size=button.dataset.previewSize;$$('[data-preview-size]').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button));});}));
 addEventListener('message',event=>{
   if(event.origin!==location.origin)return;
-  const frame=[$('#inline-preview'),$('#website-preview')].find(frame=>event.source===frame.contentWindow);if(!frame)return;
+  const frame=[$('#inline-preview'),$('#website-preview'),$('#services-preview')].find(frame=>event.source===frame.contentWindow);if(!frame)return;
   if(event.data?.type==='buildex-preview-ready'){frame.parentElement.dataset.loading='false';sendPreviews();}
   if(event.data?.type==='buildex-preview-error'){fail('Preview is unavailable. '+event.data.message);return;}
   if(event.data?.type==='buildex-preview-navigate'&&pages.includes(event.data.page)){
@@ -490,7 +493,7 @@ addEventListener('message',event=>{
     if(frame.id==='website-preview'){currentPage=event.data.page;$('#preview-page').value=currentPage;}
   }
 });
-for(const frame of [$('#inline-preview'),$('#website-preview')])frame.addEventListener('load',()=>{
+for(const frame of [$('#inline-preview'),$('#website-preview'),$('#services-preview')])frame.addEventListener('load',()=>{
   frame.parentElement.dataset.loading='false';
   try {if(frame.contentDocument?.querySelector('[data-admin-preview]'))sendPreviews();else if(frame.getAttribute('src')){notice('Preview could not load. Refresh the workspace or sign in again.',true);}}
   catch{notice('Preview could not load. Refresh the workspace and try again.',true);}
@@ -545,6 +548,7 @@ $('#crop-canvas').addEventListener('pointerup',()=>pointer=null);
 $('#crop-canvas').addEventListener('pointercancel',()=>pointer=null);
 $('#apply-crop').addEventListener('click',()=>{
   if(!crop?.result||$('#apply-crop').disabled)return;
+  if(crop.serviceApply){crop.serviceApply(crop.result);$('#crop-dialog').close('applied');return;}
   const photo=crop.photo||{label:'Project photo',filename:crop.original.name},result=crop.result;delete photo.key;
   Object.assign(photo,result,{original:crop.original,src:objectURL(result.blob)});
   if(crop.importing){if(!crop.photo){working.photos.push(photo);importQueue.added++;}crop.photo=photo;selectedPhoto=working.photos.indexOf(photo);rememberImportCrop();}
@@ -565,7 +569,16 @@ $('#crop-dialog').addEventListener('close',()=>{
 
 for(const category of categories){for(const select of [$('#category-filter'),$('#project-form').elements.category]){const option=el('option',category);option.value=category;select.append(option);}}
 for(const [id,handler] of [['project-search',renderProjects],['project-filter',renderProjects],['category-filter',renderProjects],['media-search',renderMedia],['search',renderInquiries],['status-filter',renderInquiries]])$('#'+id).addEventListener(id.includes('search')?'input':'change',handler);
-addEventListener('beforeunload',event=>{if(dirty||busy){event.preventDefault();event.returnValue='';}});
+addEventListener('beforeunload',event=>{if(dirty||busy||servicesAdmin.dirty){event.preventDefault();event.returnValue='';}});
 openTab(location.hash.slice(1)||'overview');
 showLogin('Checking your session…');
 load(true).catch(error=>showLogin(error.status===401?'Sign in using a code sent to your administrator email.':error.message));
+
+async function openServicePhoto(file,apply){
+ if(busy)return;
+ await run(async()=>{
+  const bitmap=await createImageBitmap(file);crop={bitmap,original:file,rotation:0,flipX:1,flipY:1,result:null,serviceApply:apply};
+  $('#crop-title').textContent='Edit service photo';$('#crop-file').textContent=(file.name||'Service photo')+' · Crop, rotate and resize';$('#skip-crop').hidden=true;$('#crop-add').hidden=true;$('#crop-selection').hidden=true;$('#apply-crop').textContent='Use service photo';
+  resetCrop();$('#crop-dialog').showModal();await drawCrop();
+ });
+}

@@ -1,5 +1,5 @@
 import {previewPage} from './cms-utils.js';
-let lastProjects = '';
+let lastProjects = '',lastServices='';
 const safePhoto = photo => {
   if(typeof photo.src==='string'){
     const url=new URL(photo.src,location.origin);
@@ -9,6 +9,10 @@ const safePhoto = photo => {
 };
 addEventListener('message',event=>{
   if(event.origin!==location.origin||event.source!==parent||event.data?.type!=='buildex-preview'||!Array.isArray(event.data.projects))return;
+  if(Array.isArray(event.data.services)){
+    const signature=JSON.stringify(event.data.services);
+    if(signature!==lastServices){lastServices=signature;document.buildexServicePreview=event.data.services;document.dispatchEvent(new CustomEvent('buildex-services-preview',{detail:event.data.services}));}
+  }
   const signature=JSON.stringify(event.data.projects);
   if(signature===lastProjects)return;
   lastProjects=signature;
