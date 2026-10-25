@@ -11,6 +11,22 @@ const control = (text, label, handler, className) => {
   button.addEventListener('click', handler);
   return button;
 };
+const arrow=(direction,label,handler,className)=>{
+  const button=control('',label,handler,className),svg=document.createElementNS('http://www.w3.org/2000/svg','svg'),path=document.createElementNS('http://www.w3.org/2000/svg','path');
+  for(const [key,value] of Object.entries({viewBox:'0 0 24 24',width:'20',height:'20',fill:'none',stroke:'currentColor','stroke-width':'1.6','stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true'}))svg.setAttribute(key,value);
+  path.setAttribute('d',direction<0?'M14 6l-6 6 6 6':'M10 6l6 6-6 6');svg.append(path);button.append(svg);return button;
+};
+// Retain only a few decoded neighbours, rather than downloading every album at startup.
+const warmed=new Map();
+function warmPhoto(src,priority='low'){
+  const key=new URL(src,document.baseURI).href;
+  if(warmed.has(key)){const entry=warmed.get(key);if(priority==='high')entry.image.fetchPriority='high';return entry;}
+  const image=new Image();image.decoding='async';image.fetchPriority=priority;
+  const ready=new Promise(resolve=>{image.onload=()=>image.decode().catch(()=>{}).then(()=>resolve(true));image.onerror=()=>{warmed.delete(key);resolve(false);};});
+  image.src=key;const entry={image,ready};warmed.set(key,entry);
+  if(warmed.size>8)warmed.delete(warmed.keys().next().value);
+  return entry;
+}
 function swipe(element, move) {
   let start,suppressUntil=0;
   element.addEventListener('click',event=>{
@@ -33,11 +49,11 @@ function swipe(element, move) {
   element.addEventListener('pointercancel', ()=>start=null);
 }
 
-export function albumCard(album, onOpen) {
+export function albumCard(album, onOpen, {priority='auto'}={}) {
   const photos=album.photos||[], root=node('div','album-carousel');
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
-  let index=0,elapsed=0,lastTime=0,frame=0,monitor,observer,visible=false,paused=reduced.matches;
-  const image=node('img');image.loading='lazy';image.decoding='async';image.draggable=false;
+  let index=0,elapsed=0,lastTime=0,frame=0,monitor,observer,nearby,visible=false,paused=reduced.matches;
+  const image=node('img');image.loading=priority==='high'?'eager':'lazy';image.fetchPriority=priority;image.decoding='async';image.draggable=false;
   const outgoing=node('img','album-outgoing');outgoing.alt='';outgoing.setAttribute('aria-hidden','true');outgoing.draggable=false;
   const open=control('','Open '+album.title,()=>onOpen(index,open),'album-open');open.append(outgoing,image);root.append(open);
   const count=node('span','album-count'),dots=node('div','album-dots');
@@ -58,12 +74,13 @@ export function albumCard(album, onOpen) {
     image.src=photos[index].src;image.alt=album.title+' — photo '+(index+1);
     root.dataset.photoIndex=String(index);count.textContent=(index+1)+' / '+photos.length;
     [...dots.children].forEach((dot,i)=>dot.setAttribute('aria-pressed',String(i===index)));progress();
-    if(photos.length>1){const preload=new Image();preload.src=photos[(index+1)%photos.length].src;}
+    if(visible)prepareNeighbours();
   }
+  function prepareNeighbours(){if(photos.length>1){warmPhoto(photos[(index+1)%photos.length].src);warmPhoto(photos[(index+photos.length-1)%photos.length].src);}}
   function select(next){index=(next+photos.length)%photos.length;elapsed=0;lastTime=0;show();}
   function move(delta){select(index+delta);}
   const canPlay=()=>!paused&&visible&&!document.hidden&&!document.querySelector('dialog[open]')&&image.complete&&image.naturalWidth>0;
-  function dispose(){clearInterval(monitor);cancelAnimationFrame(frame);observer?.disconnect();reduced.removeEventListener('change',preferenceChanged);}
+  function dispose(){clearInterval(monitor);cancelAnimationFrame(frame);observer?.disconnect();nearby?.disconnect();reduced.removeEventListener('change',preferenceChanged);}
   function tick(now){
     frame=0;
     if(!root.isConnected){dispose();return;}
@@ -80,10 +97,13 @@ export function albumCard(album, onOpen) {
   }
   function preferenceChanged(){paused=reduced.matches;updateMotion();sync();}
   if(photos.length>1){
-    root.append(control('‹','Previous photo in '+album.title,()=>move(-1),'album-arrow album-prev'),control('›','Next photo in '+album.title,()=>move(1),'album-arrow album-next'),count);
+    root.append(arrow(-1,'Previous photo in '+album.title,()=>move(-1),'album-arrow album-prev'),arrow(1,'Next photo in '+album.title,()=>move(1),'album-arrow album-next'),count);
     photos.forEach((_,i)=>dots.append(control('','Show photo '+(i+1)+' in '+album.title,()=>select(i),'album-dot')));
     root.append(dots,motion);swipe(root,move);updateMotion();
-    if('IntersectionObserver' in window){observer=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;sync();},{threshold:.15});observer.observe(root);}else visible=true;
+    if('IntersectionObserver' in window){
+      observer=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;if(visible)prepareNeighbours();sync();},{threshold:.15});observer.observe(root);
+      nearby=new IntersectionObserver(entries=>{if(entries[0].isIntersecting){prepareNeighbours();nearby.disconnect();}},{rootMargin:'250px'});nearby.observe(root);
+    }else{visible=true;prepareNeighbours();}
     reduced.addEventListener('change',preferenceChanged);monitor=setInterval(sync,200);
   }
   image.addEventListener('error',()=>{image.alt='Photo unavailable — '+album.title;image.style.opacity='1';outgoing.style.opacity='0';});
@@ -97,18 +117,20 @@ export function albumViewer(dialog, {prefix='media', edit}={}) {
   const header=node('header','album-viewer-header'), position=node('span','album-position');position.id=prefix+'-position';position.setAttribute('aria-live','polite');
   const close=control('×','Close project viewer',()=>dialog.close(),'album-close');close.id=prefix+'-close';header.append(position,close);
   const stage=node('div','album-stage');stage.id=prefix+'-stage';
-  const image=node('img');image.draggable=false;
-  const previous=control('‹','Previous photo',()=>move(-1),'album-arrow album-prev'),next=control('›','Next photo',()=>move(1),'album-arrow album-next');
+  const image=node('img');image.draggable=false;image.decoding='async';image.fetchPriority='high';
+  const previous=arrow(-1,'Previous photo',()=>move(-1),'album-arrow album-prev'),next=arrow(1,'Next photo',()=>move(1),'album-arrow album-next');
   previous.id=prefix+'-prev';next.id=prefix+'-next';stage.append(image,previous,next);
   const thumbnails=node('div','album-thumbnails');thumbnails.setAttribute('aria-label','Project photos');
   const caption=node('footer','album-caption'),copy=node('div'), category=node('p','album-category'), title=node('h2'), description=node('p','album-description');
   category.id=prefix+'-category';title.id=prefix+'-title';description.id=prefix+'-description';copy.append(category,title,description);caption.append(copy);
-  let album=null,index=0,opener=null;
+  let album=null,index=0,opener=null,imageRequest=0;
   if(edit)caption.append(control('Edit project','Edit this project',()=>{const project=album;dialog.close();edit(project);},'button'));
   dialog.replaceChildren(header,stage,thumbnails,caption);
   function display() {
     const photo=album.photos[index];
-    image.src=photo.src;image.alt=album.title+' — photo '+(index+1);
+    const request=++imageRequest,alt=album.title+' — photo '+(index+1);stage.setAttribute('aria-busy','true');
+    warmPhoto(photo.src,'high').ready.then(loaded=>{if(request!==imageRequest||!album)return;if(loaded){image.src=photo.src;image.alt=alt;}stage.setAttribute('aria-busy','false');});
+    if(album.photos.length>1){warmPhoto(album.photos[(index+1)%album.photos.length].src);warmPhoto(album.photos[(index+album.photos.length-1)%album.photos.length].src);}
     position.textContent=(index+1)+' / '+album.photos.length+' · '+(album.inspiration?'INSPIRATION':'PROJECT PHOTOS');
     title.textContent=album.title;category.textContent=album.category||'';description.textContent=album.description||'';
     description.hidden=!album.description;
@@ -121,7 +143,7 @@ export function albumViewer(dialog, {prefix='media', edit}={}) {
     thumbnails.replaceChildren();
     album.photos.forEach((photo,i)=>{
       const button=control('','View photo '+(i+1),()=>{index=i;display();},'album-thumb');
-      const thumb=node('img');thumb.src=photo.src;thumb.alt='';thumb.loading='lazy';button.append(thumb);thumbnails.append(button);
+      const thumb=node('img');thumb.src=photo.src;thumb.alt='';thumb.loading='lazy';thumb.decoding='async';thumb.fetchPriority='low';button.append(thumb);thumbnails.append(button);
     });
     thumbnails.hidden=album.photos.length<2;
     display();
@@ -130,7 +152,7 @@ export function albumViewer(dialog, {prefix='media', edit}={}) {
     if(event.key==='ArrowRight'||event.key==='ArrowLeft'){event.preventDefault();move(event.key==='ArrowRight'?1:-1);}
   });
   dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}});
-  dialog.addEventListener('close',()=>{image.removeAttribute('src');thumbnails.replaceChildren();album=null;if(opener?.isConnected)opener.focus();});
+  dialog.addEventListener('close',()=>{imageRequest++;image.removeAttribute('src');thumbnails.replaceChildren();album=null;if(opener?.isConnected)opener.focus();});
   swipe(stage,move);
   return {open(value,photoIndex=0,trigger=null){if(!value.photos?.length)return;opener=trigger;index=photoIndex;update(value);if(!dialog.open)dialog.showModal();},update,get id(){return album?.id;}};
 }

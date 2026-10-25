@@ -44,6 +44,31 @@ test('Studio: live versions survive draft edits; private photos stay private; ex
  }finally{sql.close();}
 });
 
+test('Published photo caching reuses bytes but still checks visibility before cache hits and 304s',async()=>{
+ const {env,sql,token,request}=await createFixture();
+ try{
+  const form=new FormData();form.set('photo',new File([png],'test.png',{type:'image/png'}));
+  const photo=await(await handleSiteAdmin(new Request(env.ADMIN_ORIGIN+'/admin/api/projects/upload',{method:'POST',headers:{Origin:env.ADMIN_ORIGIN,Cookie:'buildex_admin='+token},body:form}),env)).json();
+  const saved=await(await handleSiteAdmin(request('/admin/api/projects',{action:'save',project:{name:'Cache test',category:'Patios',description:'Photo test',location:'Houston',photos:[photo],status:'published'}}),env)).json();
+  let reads=0,puts=0,matches=0;const prepare=env.DB.prepare;
+  env.DB.prepare=query=>{if(query.startsWith('SELECT data FROM photo_data'))reads++;return prepare(query);};
+  const entries=new Map(),cache={async match(key){matches++;return entries.get(key.url)?.clone();},async put(key,response){puts++;entries.set(key.url,response.clone());}};
+  const get=()=>request('/api/media?key='+photo.key,undefined,false);
+  const first=await handlePublicSite(get(),env,{cache});assert.equal(first.status,200);assert.match(first.headers.get('Cache-Control'),/must-revalidate/);assert.deepEqual(Buffer.from(await first.arrayBuffer()),png);
+  const etag=first.headers.get('ETag');assert(etag);assert.equal(puts,1);assert.equal(reads,1);
+  const hit=await handlePublicSite(get(),env,{cache});assert.deepEqual(Buffer.from(await hit.arrayBuffer()),png);assert.equal(reads,1,'An edge hit avoids reading/decoding image bytes from D1');
+  assert.equal([...entries.keys()][0],env.PUBLIC_ORIGIN+'/api/media?key='+encodeURIComponent(photo.key),'The cache key remains on the protected API route');
+  const head=get();const headResponse=await handlePublicSite(new Request(head,{method:'HEAD'}),env,{cache});assert.equal(headResponse.status,200);assert.equal(await headResponse.text(),'');assert.equal(Number(headResponse.headers.get('Content-Length')),png.length);
+  const conditional=get();conditional.headers.set('If-None-Match',etag);const before=matches;
+  const unchanged=await handlePublicSite(conditional,env,{cache});assert.equal(unchanged.status,304);assert.equal(await unchanged.text(),'');assert.equal(matches,before,'304 reuses browser bytes without loading the image');
+  await handleSiteAdmin(request('/admin/api/projects',{action:'unpublish',id:saved.id}),env);
+  assert.equal((await handlePublicSite(conditional,env,{cache})).status,404,'An old ETag never bypasses unpublishing');
+  assert.equal((await handlePublicSite(get(),env,{cache})).status,404,'Cached bytes never bypass unpublishing');assert.equal(matches,before);
+  const privatePhoto=await handlePublicSite(request('/api/media?key='+photo.key),env,{cache});assert.equal(privatePhoto.status,200);assert.equal(privatePhoto.headers.get('Cache-Control'),'private, no-store');assert.equal(privatePhoto.headers.get('ETag'),null);assert.equal(puts,1);
+  await handleSiteAdmin(request('/admin/api/projects',{action:'delete',id:saved.id}),env);assert.equal((await handlePublicSite(get(),env,{cache})).status,404);
+ }finally{sql.close();}
+});
+
 test('Private previews consume canonical redirects, require authentication and never inherit public frame denial',async()=>{
  const {env,sql,request}=await createFixture();
  try{

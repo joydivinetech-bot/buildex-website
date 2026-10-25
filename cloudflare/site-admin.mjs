@@ -8,13 +8,18 @@ const str=(value,max=200)=>typeof value==='string'?value.trim().slice(0,max):'';
 const validId=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const validEmail=value=>/^\S+@\S+\.\S+$/.test(value);
 async function body(request,limit=30000){if(!request.headers.get('content-type')?.startsWith('application/json'))fail(415,'Expected JSON.');const raw=await request.text();if(raw.length>limit)fail(413,'Request is too large.');try{return JSON.parse(raw);}catch{fail(400,'Invalid request.');}}
-async function ensure(db){await db.batch([
+const schemas=new WeakMap();
+async function ensure(db){
+ let ready=schemas.get(db);
+ if(!ready){ready=db.batch([
  db.prepare('CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY,name TEXT NOT NULL,category TEXT NOT NULL,description TEXT NOT NULL,location TEXT NOT NULL,photos TEXT NOT NULL,updated_at INTEGER NOT NULL,status TEXT NOT NULL DEFAULT \'draft\',sort_order INTEGER NOT NULL DEFAULT 0)'),
  db.prepare('CREATE TABLE IF NOT EXISTS photos (key TEXT PRIMARY KEY,filename TEXT NOT NULL,mime TEXT NOT NULL,owner TEXT NOT NULL,project_id TEXT REFERENCES projects(id),created_at INTEGER NOT NULL)'),
  db.prepare('CREATE TABLE IF NOT EXISTS photo_data (key TEXT PRIMARY KEY,data TEXT NOT NULL)'),
  db.prepare('CREATE TABLE IF NOT EXISTS settings (id TEXT PRIMARY KEY,value TEXT NOT NULL)'),
  db.prepare('CREATE TABLE IF NOT EXISTS project_drafts (project_id TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL)')
-]);}
+ ]);schemas.set(db,ready);ready.catch(()=>schemas.delete(db));}
+ await ready;
+}
 const decodeProject=row=>{let photos=[];try{photos=JSON.parse(row.photos)||[];}catch{}return {...row,photos};};
 async function projects(db,all=false){
  const result=await db.prepare("SELECT * FROM projects"+(all?'':" WHERE status='published'")+" ORDER BY sort_order,updated_at DESC").all();
@@ -40,7 +45,43 @@ async function removeRemotePhotos(env,keys){
 }
 async function readUpload(request,env,user){const type=request.headers.get('content-type');if(!type?.startsWith('multipart/form-data;'))fail(415,'Expected a photo.');const form=await request.formData();const file=form.get('photo'),limit=env.MEDIA?8000000:1000000;if(!(file instanceof File)||!file.size||file.size>limit)fail(400,env.MEDIA?'Use a photo smaller than 8 MB.':'The prepared photo is too large. Choose a smaller image.');const image=new Uint8Array(await file.arrayBuffer());const jpeg=image[0]===255&&image[1]===216&&image[2]===255,png=[137,80,78,71,13,10,26,10].every((value,index)=>image[index]===value),webp=new TextDecoder().decode(image.slice(0,4))==='RIFF'&&new TextDecoder().decode(image.slice(8,12))==='WEBP';if(!jpeg&&!png&&!webp)fail(400,'Use JPG, PNG or WebP photos.');const extension=jpeg?'jpg':png?'png':'webp',mime=jpeg?'image/jpeg':png?'image/png':'image/webp',filename=crypto.randomUUID()+'.'+extension,key='projects/'+filename;if(env.MEDIA)await env.MEDIA.put(key,image,{httpMetadata:{contentType:mime}});try{await env.DB.batch([env.DB.prepare('INSERT INTO photos VALUES(?,?,?,?,?,?)').bind(key,filename,mime,user.email,null,Date.now()),...(env.MEDIA?[]:[env.DB.prepare('INSERT INTO photo_data(key,data) VALUES(?,?)').bind(key,toBase64(image))])]);}catch(error){if(env.MEDIA)await env.MEDIA.delete(key);throw error;}return {key,label:'Completed project'};}
 
-export async function handlePublicSite(request,env){try{await ensure(env.DB);const url=new URL(request.url);if(url.pathname==='/api/projects'&&request.method==='GET')return json(await projects(env.DB));if(url.pathname==='/api/settings'&&request.method==='GET')return json(await settings(env.DB));if(url.pathname==='/api/media'&&['GET','HEAD'].includes(request.method)){const key=url.searchParams.get('key')||'',photo=await env.DB.prepare('SELECT photos.*,projects.status,projects.photos AS public_photos FROM photos LEFT JOIN projects ON projects.id=photos.project_id WHERE photos.key=?').bind(key).first();if(!photo)fail(404,'Photo not found.');const visible=photo.status==='published'&&JSON.parse(photo.public_photos||'[]').some(item=>item.key===key);if(!visible){try{await verifyAdminSession(request,env);}catch{fail(404,'Photo not found.');}}let payload,size;if(env.MEDIA){const object=await env.MEDIA.get(key);if(!object)fail(404,'Photo not found.');payload=object.body;size=object.size;}else{const stored=await env.DB.prepare('SELECT data FROM photo_data WHERE key=?').bind(key).first();if(!stored)fail(404,'Photo not found.');payload=fromBase64(stored.data);size=payload.byteLength;}return new Response(request.method==='HEAD'?null:payload,{headers:{'Content-Type':photo.mime,'Content-Length':String(size),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});}fail(404,'Not found.');}catch(error){return json({error:error.status?error.message:'Unable to load website content.'},error.status||500);}}
+export async function handlePublicSite(request,env,ctx={}){
+ try{
+  await ensure(env.DB);const url=new URL(request.url);
+  if(url.pathname==='/api/projects'&&request.method==='GET')return json(await projects(env.DB));
+  if(url.pathname==='/api/settings'&&request.method==='GET')return json(await settings(env.DB));
+  if(url.pathname!=='/api/media'||!['GET','HEAD'].includes(request.method))fail(404,'Not found.');
+  const key=url.searchParams.get('key')||'';
+  const photo=await env.DB.prepare('SELECT photos.*,projects.status,projects.photos AS public_photos FROM photos LEFT JOIN projects ON projects.id=photos.project_id WHERE photos.key=?').bind(key).first();
+  if(!photo)fail(404,'Photo not found.');
+  const visible=photo.status==='published'&&JSON.parse(photo.public_photos||'[]').some(item=>item.key===key);
+  if(!visible){try{await verifyAdminSession(request,env);}catch{fail(404,'Photo not found.');}}
+  // Validate publication before both browser revalidation and the edge cache.
+  const etag='"'+photo.filename+'"';
+  const headers=new Headers({'Content-Type':photo.mime,'X-Content-Type-Options':'nosniff','Cache-Control':visible?'private, max-age=0, must-revalidate':'private, no-store'});
+  if(visible){
+   headers.set('ETag',etag);
+   if((request.headers.get('If-None-Match')||'').split(',').some(value=>[etag,'W/'+etag,'*'].includes(value.trim())))return new Response(null,{status:304,headers});
+  }
+  const cache=visible?(ctx.cache??globalThis.caches?.default):null;
+  // Keep the key on /api/*, which always runs this publication check before cache lookup.
+  const cacheKey=new Request(url.origin+'/api/media?key='+encodeURIComponent(key));
+  if(cache){
+   try{const hit=await cache.match(cacheKey);if(hit?.status===200){const size=hit.headers.get('Content-Length');if(size)headers.set('Content-Length',size);return new Response(request.method==='HEAD'?null:hit.body,{headers});}}catch{}
+  }
+  let payload,size;
+  if(env.MEDIA){const object=await env.MEDIA.get(key);if(!object)fail(404,'Photo not found.');payload=object.body;size=object.size;}
+  else{const stored=await env.DB.prepare('SELECT data FROM photo_data WHERE key=?').bind(key).first();if(!stored)fail(404,'Photo not found.');payload=fromBase64(stored.data);size=payload.byteLength;}
+  headers.set('Content-Length',String(size));
+  const response=new Response(request.method==='HEAD'?null:payload,{headers});
+  if(cache&&request.method==='GET'){
+   const copy=response.clone(),edgeHeaders=new Headers(copy.headers);edgeHeaders.set('Cache-Control','public, max-age=86400, immutable');
+   const job=Promise.resolve().then(()=>cache.put(cacheKey,new Response(copy.body,{headers:edgeHeaders}))).catch(()=>{});
+   if(ctx.waitUntil)ctx.waitUntil(job);else await job;
+  }
+  return response;
+ }catch(error){return json({error:error.status?error.message:'Unable to load website content.'},error.status||500);}
+}
 
 export async function handleSiteAdmin(request,env,authorizer=verifyAdminSession){try{const url=new URL(request.url);if(url.origin!==env.ADMIN_ORIGIN)fail(404,'Not found.');const user=await authorizer(request,env);await ensure(env.DB);if(request.method==='POST'&&request.headers.get('origin')!==url.origin)fail(403,'Invalid request origin.');
  if(url.pathname==='/admin/api/media'&&['GET','HEAD'].includes(request.method)){const key=url.searchParams.get('key')||'',photo=await env.DB.prepare('SELECT mime FROM photos WHERE key=?').bind(key).first();if(!photo)fail(404,'Photo not found.');let payload,size;if(env.MEDIA){const object=await env.MEDIA.get(key);if(!object)fail(404,'Photo not found.');payload=object.body;size=object.size;}else{const stored=await env.DB.prepare('SELECT data FROM photo_data WHERE key=?').bind(key).first();if(!stored)fail(404,'Photo not found.');payload=fromBase64(stored.data);size=payload.byteLength;}return new Response(request.method==='HEAD'?null:payload,{headers:{'Content-Type':photo.mime,'Content-Length':String(size),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});}

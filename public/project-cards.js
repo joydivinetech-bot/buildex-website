@@ -2,7 +2,7 @@ import {albumCard} from './album-ui.js';
 const el=(tag,cls,text='')=>{const node=document.createElement(tag);node.className=cls;node.textContent=text;return node;};
 export function projectCard(item,number,viewer){
   const card=el('article','media-card service-card project-service-card');
-  const carousel=albumCard(item,(index,opener)=>viewer.open(item,index,opener));carousel.classList.add('media-cover');
+  const carousel=albumCard(item,(index,opener)=>viewer.open(item,index,opener),{priority:number===0?'high':'auto'});carousel.classList.add('media-cover');
   const copy=el('div','project-card-copy'),heading=el('h2',''),title=el('button','media-title',item.title);title.type='button';
   const open=trigger=>viewer.open(item,Number(carousel.dataset.photoIndex)||0,trigger);
   title.addEventListener('click',()=>open(title));heading.append(title);

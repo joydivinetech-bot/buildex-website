@@ -21,8 +21,8 @@ Homepage and public Projects use taller full-width rows through project-cards.js
 
 - Project details and pending photo files are recovered from IndexedDB after a refresh. Storage is scoped to the signed-in administrator. Browser storage failure is shown in the edit status; Save draft remains the durable option.
 - New photos and crops stay on the device until Save draft or Publish. Previews send object URLs and metadata to the private iframe, not uploads.
-- Initial photo optimization uses a maximum 1,200 px longest side. The photo editor offers 800–2,000 px output limits without upscaling.
-- The size readout is the actual WebP export size. Quality may be reduced to fit the storage limit.
+- New uploads default to a 2,560 px longest side at 92% WebP quality, without upscaling. Smaller dimensions and Balanced/Compact quality remain available. Previously saved photos retain their existing resolution; upload source originals again to gain detail.
+- The size readout is the actual WebP export size. If the selected output exceeds the storage limit, dimensions are reduced while preserving the selected encoding quality.
 - The current D1 fallback accepts 1 MB per prepared photo; the existing R2 path accepts 8 MB. No new paid service or external image-processing service is introduced.
 - Source originals are held for editing on the current device. Only prepared images are uploaded. After saving, reopening a photo edits the saved optimized image.
 - Successfully uploaded photos keep their keys if a later upload fails, so retrying does not upload them again.
@@ -30,6 +30,8 @@ Homepage and public Projects use taller full-width rows through project-cards.js
 - Discard saved changes restores the published content. Unpublish explicitly removes the project from the public gallery.
 - Replaced media is pruned when saving or discarding once it is no longer used by either the working or published version.
 - Public media access checks the actual published photo list, not merely the parent project's status.
+- Published image bytes use Cloudflare's [Cache API](https://developers.cloudflare.com/workers/runtime-apis/cache/), with a publication check before every cache hit. Browser ETags avoid downloading unchanged photos again. Unpublishing still blocks both cached responses and conditional requests; private admin photos remain no-store. Schema initialization is reused per database binding rather than repeated for every photo request.
+- The first project cover loads eagerly at high priority. Nearby albums prefetch their next/previous photos; offscreen albums do not preload their whole collection. The popup keeps the current image visible until the next photo is downloaded and decoded, while thumbnails use lower network priority. Only a small set of decoded neighbours is retained.
 - A version check rejects edits based on an older saved version.
 - Contact information and hero content remain source-controlled, as requested.
 

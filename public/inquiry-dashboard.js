@@ -295,11 +295,14 @@ function renderPhotos() {
 
 function movePhoto(from,to) {if(busy)return;const [photo]=working.photos.splice(from,1);working.photos.splice(to,0,photo);selectedPhoto=to;renderPhotos();changed();}
 function canvasBlob(canvas,quality) {return new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(Error('This browser could not export the photo.')),'image/webp',quality));}
-async function exportPhoto(source,rect,quality=.82) {
+async function exportPhoto(source,rect,quality=.92) {
   const canvas=document.createElement('canvas');canvas.width=rect.width;canvas.height=rect.height;
-  canvas.getContext('2d').drawImage(source,rect.sx,rect.sy,rect.sw,rect.sh,0,0,canvas.width,canvas.height);
-  let blob=await canvasBlob(canvas,quality), limit=storageMode==='r2'?8000000:1000000;
-  while(blob.size>limit && quality>.45) {quality-=.1;blob=await canvasBlob(canvas,quality);}
+  const draw=()=>{const context=canvas.getContext('2d');context.imageSmoothingEnabled=true;context.imageSmoothingQuality='high';context.drawImage(source,rect.sx,rect.sy,rect.sw,rect.sh,0,0,canvas.width,canvas.height);};
+  draw();let blob=await canvasBlob(canvas,quality),limit=storageMode==='r2'?8000000:1000000;
+  // Preserve the selected encoding quality; reduce dimensions only if storage requires it.
+  while(blob.size>limit&&Math.max(canvas.width,canvas.height)>640){
+    canvas.width=Math.max(1,Math.round(canvas.width*.85));canvas.height=Math.max(1,Math.round(canvas.height*.85));draw();blob=await canvasBlob(canvas,quality);
+  }
   if(blob.size>limit)throw Error('This photo is still too large. Choose a smaller output size.');
   return {blob,width:canvas.width,height:canvas.height,bytes:blob.size};
 }
@@ -433,7 +436,7 @@ async function openCrop(index) {
 }
 function resetCrop() {
   if(!crop)return;
-  crop.rotation=0;crop.flipX=crop.flipY=1;$('#crop-ratio').value='original';$('#crop-zoom').value='1';$('#crop-x').value=$('#crop-y').value='0.5';$('#crop-size').value='1200';$('#crop-quality').value='0.82';
+  crop.rotation=0;crop.flipX=crop.flipY=1;$('#crop-ratio').value='original';$('#crop-zoom').value='1';$('#crop-x').value=$('#crop-y').value='0.5';$('#crop-size').value='2560';$('#crop-quality').value='0.92';
 }
 function cropSource() {
   const {bitmap,rotation}=crop,canvas=document.createElement('canvas'),swap=rotation%180!==0;
