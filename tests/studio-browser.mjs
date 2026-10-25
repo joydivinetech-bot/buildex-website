@@ -254,10 +254,14 @@ try{
    const ids=await page.locator('#project-list .project-card').evaluateAll(cards=>cards.map(c=>c.dataset.projectId));
    const handle=page.locator('#project-list .project-card').first().locator('.project-drag-handle');
    await handle.scrollIntoViewIfNeeded();const start=await handle.boundingBox(),target=await page.locator('#project-list .project-card').last().boundingBox();
-   await page.mouse.move(start.x+start.width/2,start.y+start.height/2);await page.mouse.down();await page.mouse.move(target.x+target.width/2,target.y+target.height/2,{steps:12});await page.mouse.up();
-   await page.locator('#confirm-dialog').waitFor({state:'visible'});await page.locator('#confirm-ok').click();
+   await page.mouse.move(start.x+start.width/2,start.y+start.height/2);await page.mouse.down();await page.mouse.move(target.x+target.width*.75,target.y+target.height*.75,{steps:12});
+   await page.locator('.collection-drag-ghost').waitFor({state:'visible'});await page.waitForFunction(()=>document.querySelector('#project-list .project-card:last-child').classList.contains('collection-sort-placeholder'));
+   await page.screenshot({path:path.join(screenshots,'drag-'+view+'.png')});await page.mouse.up();
+   assert.equal(await page.locator('#confirm-dialog').isVisible(),false,'Reordering never opens a confirmation');
    await page.waitForFunction(id=>document.querySelector('#project-list .project-card:last-child').dataset.projectId===id,ids[0]);
-   const saved=await (await context.request.get(origin+'/admin/api/site')).json();assert.equal(saved.projects.at(-1).id,ids[0],'Drag order is saved');
+   const beforePublish=await (await context.request.get(origin+'/admin/api/site')).json();assert.equal(beforePublish.projects[0].id,ids[0],'Sorting is private until Publish edits');
+   await page.locator('#publish-project-order').click();await page.locator('#publish-project-order').waitFor({state:'hidden'});
+   const saved=await (await context.request.get(origin+'/admin/api/site')).json();assert.equal(saved.projects.at(-1).id,ids[0],'Publish edits saves the staged order');
    await page.screenshot({path:path.join(screenshots,'collection-'+view+'.png'),fullPage:true});
  }
  await page.reload();await page.locator('#project-collection').waitFor({state:'visible'});assert.equal(await page.locator('#project-list').getAttribute('data-view'),'list','View preference survives reload');

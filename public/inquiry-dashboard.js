@@ -1,3 +1,4 @@
+import {collectionSort} from './collection-sort.js';
 import {initServices} from './services-admin.js';
 import {categories, pages, cropRect, formatBytes, photoMetadata, previewCollection} from './cms-utils.js';
 import {albumCard,albumViewer} from './album-ui.js';
@@ -10,6 +11,7 @@ let projects = [], inquiries = [], working = null, dirty = false, busy = false, 
 let recoveryTimer, previewTimer, dragIndex = null, crop = null, cropGeneration = 0, cropTimer;
 let inlineSize = 'desktop', currentPage = 'home', restoreRecord = null, authLost = false;
 let importQueue=null;
+let pendingProjectOrder=null,publishedProjectOrder=[];
 const urls = new Set();
 const objectURL = blob => {const url = URL.createObjectURL(blob); urls.add(url); return url;};
 const photoURL = photo => photo.src || '/admin/api/media?key=' + encodeURIComponent(photo.key);
@@ -30,7 +32,7 @@ const post = (path, body) => api(path, {method:'POST', body:JSON.stringify(body)
 function setBusy(value) {
   busy = value;
   $('#editor-fields').disabled = value;
-  ['save-draft','publish-project','photo-upload','unpublish-project','discard-draft','refresh','sign-out'].forEach(id => $('#' + id).disabled = value);
+  ['publish-project-order','save-draft','publish-project','photo-upload','unpublish-project','discard-draft','refresh','sign-out'].forEach(id => $('#' + id).disabled = value);
   $('#dashboard').setAttribute('aria-busy', String(value));
 }
 async function run(task) {
@@ -111,7 +113,9 @@ function showLogin(message) {
 async function load(initial = false) {
   const [site, inbox] = await Promise.all([api('/admin/api/site'), api('/admin/api/inquiries')]);
   await servicesAdmin.load();
-  user = site.user.email; projects = site.projects; inquiries = inbox.inquiries;
+  user = site.user.email;publishedProjectOrder=site.projects.map(p=>p.id);
+  if(pendingProjectOrder){const positions=new Map(pendingProjectOrder.map((id,i)=>[id,i]));site.projects.sort((a,b)=>(positions.get(a.id)??Infinity)-(positions.get(b.id)??Infinity));pendingProjectOrder=site.projects.map(p=>p.id);if(JSON.stringify(pendingProjectOrder)===JSON.stringify(publishedProjectOrder))pendingProjectOrder=null;}
+  projects = site.projects; inquiries = inbox.inquiries;
   storageMode = site.storageMode || 'database'; authLost = false;
   $('#account').textContent = user; $('#dashboard').hidden = false; $('#login').hidden = true;
   renderAll();
@@ -135,8 +139,8 @@ $('#code-form').addEventListener('submit', async event => {
   finally {button.disabled = false;}
 });
 $('#sign-out').addEventListener('click', async () => {
-  if (busy || (dirty||servicesAdmin.dirty) && !await confirmAction('Sign out?', 'Your unfinished edit will be removed from this device. Save a draft first if you want to keep it.', 'Sign out')) return;
-  await run(async () => {await post('/admin/api/auth/logout', {}); await clearRecovery(); releaseEditor(); servicesAdmin.reset(); working = null; inquiries = []; projects = []; $('#code-form').hidden = true; showLogin('Signed out securely.');});
+  if (busy || (dirty||servicesAdmin.dirty||pendingProjectOrder) && !await confirmAction('Sign out?', 'Your unfinished edit will be removed from this device. Save a draft first if you want to keep it.', 'Sign out')) return;
+  await run(async () => {await post('/admin/api/auth/logout', {}); await clearRecovery(); releaseEditor(); servicesAdmin.reset();pendingProjectOrder=null;publishedProjectOrder=[]; working = null; inquiries = []; projects = []; $('#code-form').hidden = true; showLogin('Signed out securely.');});
 });
 $('#refresh').addEventListener('click', () => run(async () => {await load(); notice('Workspace refreshed.');}));
 $('#mobile-sign-out').addEventListener('click',()=>$('#sign-out').click());
@@ -173,29 +177,11 @@ function setProjectView(view){
   try{localStorage.setItem('buildex-project-view',view);}catch{}
 }
 $$('[data-project-view]').forEach(button=>button.addEventListener('click',()=>setProjectView(button.dataset.projectView)));
-let projectDrag=null;
-function finishProjectDrag(event,cancelled=false){
-  if(!projectDrag||event.pointerId!==projectDrag.pointerId)return;
-  const drag=projectDrag;projectDrag=null;
-  $$('#project-list .project-card').forEach(card=>card.classList.remove('project-dragging','project-drop-target'));
-  if(!cancelled&&drag.moved&&drag.target&&drag.target!==drag.id){
-    void reorderProject(projects.findIndex(p=>p.id===drag.id),projects.findIndex(p=>p.id===drag.target));
-  }
-}
-addEventListener('pointermove',event=>{
-  if(!projectDrag||event.pointerId!==projectDrag.pointerId)return;
-  const drag=projectDrag;if(Math.hypot(event.clientX-drag.x,event.clientY-drag.y)<6&&!drag.moved)return;
-  drag.moved=true;event.preventDefault();
-  const card=document.elementFromPoint(event.clientX,event.clientY)?.closest('#project-list .project-card');
-  drag.target=card?.dataset.projectId;
-  $$('#project-list .project-card').forEach(item=>item.classList.toggle('project-drop-target',item===card&&item.dataset.projectId!==drag.id));
-  if(event.clientY<90)window.scrollBy(0,-24);else if(event.clientY>innerHeight-90)window.scrollBy(0,24);
-},{passive:false});
-addEventListener('pointerup',event=>finishProjectDrag(event));
-addEventListener('pointercancel',event=>finishProjectDrag(event,true));
-addEventListener('keydown',event=>{if(event.key==='Escape'&&projectDrag)finishProjectDrag({pointerId:projectDrag.pointerId},true);});
+collectionSort($('#project-list'),{idAttribute:'data-project-id',locked:()=>busy,onDrop:(id,target,before)=>{
+ const from=projects.findIndex(p=>p.id===id),remaining=projects.filter(p=>p.id!==id),to=remaining.findIndex(p=>p.id===target)+(before?0:1);reorderProject(from,to);
+}});
 function renderProjects() {
-  setProjectView(projectView);
+  setProjectView(projectView);$('#publish-project-order').hidden=!pendingProjectOrder;
   const query = $('#project-search').value.toLowerCase(), filter = $('#project-filter').value, category = $('#category-filter').value;
   const selected = projects.filter(p => (!query || [p.name,p.location].join(' ').toLowerCase().includes(query)) && (filter === 'all' || (filter === 'changes' ? p.hasDraft : p.status === filter)) && (category === 'all' || p.category === category));
   const list = $('#project-list'); list.replaceChildren(); $('#project-results').textContent = selected.length + ' projects';
@@ -212,11 +198,6 @@ function renderProjects() {
     actions.append(action('Edit project →', () => editProject(project)), action('Delete', () => deleteProject(project), 'text-button danger-text'));
     for (const [label,to] of [['↑',index-1],['↓',index+1]]) {const button = action(label, () => reorderProject(index,to)); button.disabled = to<0 || to>=projects.length; button.setAttribute('aria-label',(label==='↑'?'Move earlier: ':'Move later: ') + project.name); move.append(button);}
     const handle=action('⠿',()=>{},'project-drag-handle');handle.setAttribute('aria-label','Drag to reorder: '+project.name);handle.title='Drag to reorder · Arrow keys move earlier or later';
-    handle.addEventListener('pointerdown',event=>{
-      if(busy||event.button!==0)return;
-      projectDrag={id:project.id,pointerId:event.pointerId,x:event.clientX,y:event.clientY,moved:false,target:null};
-      handle.setPointerCapture(event.pointerId);card.classList.add('project-dragging');
-    });
     handle.addEventListener('keydown',event=>{
       const direction=['ArrowUp','ArrowLeft'].includes(event.key)?-1:['ArrowDown','ArrowRight'].includes(event.key)?1:0;
       if(!direction||busy)return;event.preventDefault();const from=projects.findIndex(p=>p.id===project.id),to=from+direction;
@@ -226,11 +207,16 @@ function renderProjects() {
   }
   if (!selected.length) empty(list,'No projects to show', projects.length ? 'Try another search or filter.' : 'Add a project, choose your photos and preview it before publishing.');
 }
-async function reorderProject(from,to) {
-  if(busy||from<0||to<0||from===to||to>=projects.length)return;
-  if (!await confirmAction('Change project order?', 'This updates the order of published projects on the website.', 'Update order')) return;
-  await run(async () => {const ordered = [...projects], [item] = ordered.splice(from,1); ordered.splice(to,0,item); await post('/admin/api/projects',{action:'reorder',ids:ordered.map(p=>p.id)}); projects = ordered; renderProjects(); sendPreviews(); notice('Project order updated.');});
+function reorderProject(from,to) {
+ if(busy||from<0||to<0||from===to||to>=projects.length)return;
+ const [item]=projects.splice(from,1);projects.splice(to,0,item);
+ const ids=projects.map(p=>p.id);pendingProjectOrder=JSON.stringify(ids)===JSON.stringify(publishedProjectOrder)?null:ids;
+ renderProjects();sendPreviews();notice(pendingProjectOrder?'Project order changed. Publish edits when ready.':'Project order restored.');
 }
+$('#publish-project-order').addEventListener('click',()=>{
+ if(busy||!pendingProjectOrder)return;
+ void run(async()=>{const ids=[...pendingProjectOrder];await post('/admin/api/projects',{action:'reorder',ids});publishedProjectOrder=ids;pendingProjectOrder=null;renderProjects();sendPreviews();notice('Project order published. Your website is updated.');});
+});
 async function deleteProject(project) {
   if (busy || !await confirmAction('Delete “' + project.name + '”?','This permanently removes the project, its saved draft and its uploaded photos.', 'Delete project',true)) return;
   await run(async () => {await post('/admin/api/projects',{action:'delete',id:project.id}); if (working?.id === project.id) {await clearRecovery(); releaseEditor(); working=null; $('#editor').hidden=true; $('#project-collection').hidden=false;} await load(); notice('Project deleted.');});
@@ -569,7 +555,7 @@ $('#crop-dialog').addEventListener('close',()=>{
 
 for(const category of categories){for(const select of [$('#category-filter'),$('#project-form').elements.category]){const option=el('option',category);option.value=category;select.append(option);}}
 for(const [id,handler] of [['project-search',renderProjects],['project-filter',renderProjects],['category-filter',renderProjects],['media-search',renderMedia],['search',renderInquiries],['status-filter',renderInquiries]])$('#'+id).addEventListener(id.includes('search')?'input':'change',handler);
-addEventListener('beforeunload',event=>{if(dirty||busy||servicesAdmin.dirty){event.preventDefault();event.returnValue='';}});
+addEventListener('beforeunload',event=>{if(dirty||busy||servicesAdmin.dirty||pendingProjectOrder){event.preventDefault();event.returnValue='';}});
 openTab(location.hash.slice(1)||'overview');
 showLogin('Checking your session…');
 load(true).catch(error=>showLogin(error.status===401?'Sign in using a code sent to your administrator email.':error.message));

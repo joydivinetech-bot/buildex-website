@@ -1,11 +1,13 @@
+import {collectionSort} from './collection-sort.js';
 export function initServices({api,post,run,confirmAction,notice,preview,openPhoto}){
  const $=selector=>document.querySelector(selector),el=(tag,text='',cls='')=>{const n=document.createElement(tag);n.textContent=text;n.className=cls;return n;};
  const button=(text,click,cls='text-button')=>{const b=el('button',text,cls);b.type='button';b.addEventListener('click',click);return b;};
- let state=null,items=[],selected=null,changed=false,view='grid',drag=null,locked=false;
+ let state=null,items=[],selected=null,changed=false,view='grid',locked=false;
  try{view=localStorage.getItem('buildex-service-view')==='list'?'list':'grid';}catch{}
  const imageURL=image=>image?.src||(image?.key?'/admin/api/media?key='+encodeURIComponent(image.key):'');
  function update(){notice('');changed=true;$('#services-state').textContent='Unpublished changes · Save draft or publish when ready';render();preview();}
  function render(){
+  document.querySelectorAll('[data-save-services=publish]').forEach(b=>b.hidden=!(changed||state?.draft)||(!b.closest('.filterbar')&&!selected));
   const list=$('#services-list');list.dataset.view=view;list.replaceChildren();
   document.querySelectorAll('[data-service-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.serviceView===view)));
   const query=$('#service-search').value.toLowerCase();
@@ -21,21 +23,16 @@ export function initServices({api,post,run,confirmAction,notice,preview,openPhot
    for(const [label,to] of [['↑',index-1],['↓',index+1]]){const b=button(label,()=>reorder(index,to));b.disabled=to<0||to>=items.length;b.setAttribute('aria-label',(label==='↑'?'Move earlier: ':'Move later: ')+item.name);move.append(b);}
    actions.append(move);copy.append(actions);
    const handle=button('⠿',()=>{},'project-drag-handle');handle.setAttribute('aria-label','Drag to reorder service: '+item.name);handle.title='Drag to reorder · Arrow keys move earlier or later';
-   handle.addEventListener('pointerdown',e=>{if(locked||e.button!==0)return;drag={id:item.id,pointer:e.pointerId,x:e.clientX,y:e.clientY,target:null};handle.setPointerCapture(e.pointerId);card.classList.add('project-dragging');});
    handle.addEventListener('keydown',e=>{const delta=['ArrowUp','ArrowLeft'].includes(e.key)?-1:['ArrowDown','ArrowRight'].includes(e.key)?1:0;if(delta){e.preventDefault();reorder(index,index+delta);}});
    card.append(image,copy,handle);list.append(card);
   });
   if(!list.children.length)list.append(el('p',items.length?'No matching services.':'Add a service to get started.','empty-state'));
  }
  function reorder(from,to){if(locked||from===to||to<0||to>=items.length)return;const [item]=items.splice(from,1);items.splice(to,0,item);update();}
- addEventListener('pointermove',e=>{if(!drag||drag.pointer!==e.pointerId)return;if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<6&&!drag.moved)return;e.preventDefault();drag.moved=true;
-  const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('#services-list .project-card');drag.target=target?.dataset.serviceId;
-  document.querySelectorAll('#services-list .project-card').forEach(c=>c.classList.toggle('project-drop-target',c===target&&c.dataset.serviceId!==drag.id));
-  if(e.clientY<90)window.scrollBy(0,-24);else if(e.clientY>innerHeight-90)window.scrollBy(0,24);
- },{passive:false});
- function endDrag(e,cancel=false){if(!drag||e.pointerId!==drag.pointer)return;const d=drag;drag=null;document.querySelectorAll('#services-list .project-card').forEach(c=>c.classList.remove('project-dragging','project-drop-target'));if(!cancel&&d.moved&&d.target)reorder(items.findIndex(s=>s.id===d.id),items.findIndex(s=>s.id===d.target));}
- addEventListener('pointerup',e=>endDrag(e));addEventListener('pointercancel',e=>endDrag(e,true));addEventListener('keydown',e=>{if(e.key==='Escape'&&drag)endDrag({pointerId:drag.pointer},true);});
- function edit(id){selected=id;const item=items.find(s=>s.id===id),form=$('#service-form');form.elements.name.value=item.name;form.elements.description.value=item.description;form.elements.link.value=item.link;$('#service-editor-title').textContent=item.name||'New service';$('#service-editor').hidden=false;$('#services-collection').hidden=true;showImage(item);$('#services-preview').src='/admin/preview?page=services';form.elements.name.focus();preview();}
+ collectionSort($('#services-list'),{idAttribute:'data-service-id',locked:()=>locked,onDrop:(id,target,before)=>{
+ const from=items.findIndex(s=>s.id===id),remaining=items.filter(s=>s.id!==id),to=remaining.findIndex(s=>s.id===target)+(before?0:1);reorder(from,to);
+ }});
+ function edit(id){selected=id;render();const item=items.find(s=>s.id===id),form=$('#service-form');form.elements.name.value=item.name;form.elements.description.value=item.description;form.elements.link.value=item.link;$('#service-editor-title').textContent=item.name||'New service';$('#service-editor').hidden=false;$('#services-collection').hidden=true;showImage(item);$('#services-preview').src='/admin/preview?page=services';form.elements.name.focus();preview();}
  function showImage(item){$('#service-recrop').hidden=!(item.image?.key||item.image?.blob);const image=$('#service-cover');image.hidden=!item.image;if(item.image)image.src=imageURL(item.image);else image.removeAttribute('src');}
  function close(){selected=null;$('#service-editor').hidden=true;$('#services-collection').hidden=false;$('#services-preview').removeAttribute('src');render();}
  let previewSize='desktop';
@@ -60,7 +57,6 @@ export function initServices({api,post,run,confirmAction,notice,preview,openPhot
  async function save(action){
   if(locked||!state)return;
   if(action!=='discard'&&items.some(s=>!s.name.trim()||!s.image)){notice('Every service needs a name and photo. Complete it or remove it before saving.',true);return;}
-  if(action==='publish'&&!await confirmAction('Publish services?','The current services, photos and order will replace the collection on your website.','Publish services'))return;
   if(action==='discard'&&!await confirmAction('Discard service changes?','Restore the published collection, including its original order.','Discard changes',true))return;
   notice('Saving services…');locked=true;$('#service-form fieldset').disabled=true;document.querySelectorAll('[data-save-services]').forEach(b=>b.disabled=true);
   await run(async()=>{
