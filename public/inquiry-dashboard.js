@@ -12,10 +12,11 @@ let recoveryTimer, previewTimer, dragIndex = null, crop = null, cropGeneration =
 let inlineSize = 'desktop', currentPage = 'home', restoreRecord = null, authLost = false;
 let importQueue=null;
 let pendingProjectOrder=null,publishedProjectOrder=[];
+const pendingVisibility=new Map(),publishedVisibility=new Map();
 const urls = new Set();
 const objectURL = blob => {const url = URL.createObjectURL(blob); urls.add(url); return url;};
 const photoURL = photo => photo.src || '/admin/api/media?key=' + encodeURIComponent(photo.key);
-const badge = project => el('span', project.hasDraft ? 'Unpublished changes' : project.status === 'published' ? 'Published' : 'Draft', 'badge ' + (project.hasDraft ? 'changes' : project.status));
+const badge = project => project.hidden?el('span','Hidden','badge hidden-project'):el('span', project.hasDraft ? 'Unpublished changes' : project.status === 'published' ? 'Published' : 'Draft', 'badge ' + (project.hasDraft ? 'changes' : project.status));
 const date = value => new Date(value).toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'});
 const notice = (message, error = false) => {$('#notice').hidden = !message; $('#notice').textContent = message; $('#notice').classList.toggle('error', error);};
 function fail(message) {notice(message, true);}
@@ -115,6 +116,8 @@ async function load(initial = false) {
   await servicesAdmin.load();
   user = site.user.email;publishedProjectOrder=site.projects.map(p=>p.id);
   if(pendingProjectOrder){const positions=new Map(pendingProjectOrder.map((id,i)=>[id,i]));site.projects.sort((a,b)=>(positions.get(a.id)??Infinity)-(positions.get(b.id)??Infinity));pendingProjectOrder=site.projects.map(p=>p.id);if(JSON.stringify(pendingProjectOrder)===JSON.stringify(publishedProjectOrder))pendingProjectOrder=null;}
+  publishedVisibility.clear();for(const project of site.projects){publishedVisibility.set(project.id,!!project.hidden);if(pendingVisibility.has(project.id)){if(pendingVisibility.get(project.id)===!!project.hidden)pendingVisibility.delete(project.id);else project.hidden=pendingVisibility.get(project.id);}}
+  for(const id of pendingVisibility.keys())if(!publishedVisibility.has(id))pendingVisibility.delete(id);
   projects = site.projects; inquiries = inbox.inquiries;
   storageMode = site.storageMode || 'database'; authLost = false;
   $('#account').textContent = user; $('#dashboard').hidden = false; $('#login').hidden = true;
@@ -139,8 +142,8 @@ $('#code-form').addEventListener('submit', async event => {
   finally {button.disabled = false;}
 });
 $('#sign-out').addEventListener('click', async () => {
-  if (busy || (dirty||servicesAdmin.dirty||pendingProjectOrder) && !await confirmAction('Sign out?', 'Your unfinished edit will be removed from this device. Save a draft first if you want to keep it.', 'Sign out')) return;
-  await run(async () => {await post('/admin/api/auth/logout', {}); await clearRecovery(); releaseEditor(); servicesAdmin.reset();pendingProjectOrder=null;publishedProjectOrder=[]; working = null; inquiries = []; projects = []; $('#code-form').hidden = true; showLogin('Signed out securely.');});
+  if (busy || (dirty||servicesAdmin.dirty||pendingProjectOrder||pendingVisibility.size) && !await confirmAction('Sign out?', 'Your unfinished edit will be removed from this device. Save a draft first if you want to keep it.', 'Sign out')) return;
+  await run(async () => {await post('/admin/api/auth/logout', {}); await clearRecovery(); releaseEditor(); servicesAdmin.reset();pendingProjectOrder=null;publishedProjectOrder=[];pendingVisibility.clear();publishedVisibility.clear(); working = null; inquiries = []; projects = []; $('#code-form').hidden = true; showLogin('Signed out securely.');});
 });
 $('#refresh').addEventListener('click', () => run(async () => {await load(); notice('Workspace refreshed.');}));
 $('#mobile-sign-out').addEventListener('click',()=>$('#sign-out').click());
@@ -150,7 +153,7 @@ function renderOverview() {
   const pending = inquiries.filter(item => item.status === 'new').length;
   $('#new-count').textContent = pending || ''; $('#project-count').textContent = projects.length || '';
   $('#summary').replaceChildren(...[
-    ['Published projects', projects.filter(p => p.status === 'published').length, 'Visible on your website'],
+    ['Published projects', projects.filter(p => p.status === 'published'&&!publishedVisibility.get(p.id)).length, 'Visible on your website'],
     ['Drafts & changes', projects.filter(p => p.status === 'draft' || p.hasDraft).length, 'Ready for your attention'],
     ['Project photos', projects.reduce((n,p) => n + p.photos.length, 0), 'In your saved collection'],
     ['New inquiries', pending, 'Waiting for a conversation']
@@ -181,13 +184,13 @@ collectionSort($('#project-list'),{idAttribute:'data-project-id',locked:()=>busy
  const from=projects.findIndex(p=>p.id===id),remaining=projects.filter(p=>p.id!==id),to=remaining.findIndex(p=>p.id===target)+(before?0:1);reorderProject(from,to);
 }});
 function renderProjects() {
-  setProjectView(projectView);$('#publish-project-order').hidden=!pendingProjectOrder;
+  setProjectView(projectView);$('#publish-project-order').hidden=!pendingProjectOrder&&!pendingVisibility.size;
   const query = $('#project-search').value.toLowerCase(), filter = $('#project-filter').value, category = $('#category-filter').value;
-  const selected = projects.filter(p => (!query || [p.name,p.location].join(' ').toLowerCase().includes(query)) && (filter === 'all' || (filter === 'changes' ? p.hasDraft : p.status === filter)) && (category === 'all' || p.category === category));
+  const selected = projects.filter(p => (!query || [p.name,p.location].join(' ').toLowerCase().includes(query)) && (filter === 'all' || (filter === 'changes' ? p.hasDraft : filter === 'hidden' ? p.hidden : p.status === filter)) && (category === 'all' || p.category === category));
   const list = $('#project-list'); list.replaceChildren(); $('#project-results').textContent = selected.length + ' projects';
   for (const project of selected) {
     const card = el('article', '', 'project-card'), image = el('div', '', 'project-image');
-    card.dataset.projectId=project.id;
+    card.dataset.projectId=project.id;card.classList.toggle('is-hidden',!!project.hidden);
     if (project.photos.length) {const album=projectAlbum(project);image.append(albumCard(album,(index,trigger)=>projectViewer.open(album,index,trigger)));}
     else image.append(el('span','▧'));
     image.append(badge(project));
@@ -196,6 +199,12 @@ function renderProjects() {
     const meta = el('div','','card-meta'); meta.append(el('span',project.photos.length + ' photos'),el('span','Updated ' + date(project.updated_at)));
     const actions = el('div','','card-actions'), move = el('div','','move'), index = projects.indexOf(project);
     actions.append(action('Edit project →', () => editProject(project)), action('Delete', () => deleteProject(project), 'text-button danger-text'));
+    actions.append(action(project.hidden?'Unhide':'Hide',()=>{
+      if(busy)return;project.hidden=!project.hidden;
+      if(project.hidden===publishedVisibility.get(project.id))pendingVisibility.delete(project.id);else pendingVisibility.set(project.id,project.hidden);
+      if(working?.id===project.id)working.hidden=project.hidden;
+      renderProjects();sendPreviews();notice(pendingVisibility.size||pendingProjectOrder?'Project visibility changed. Publish edits when ready.':'Project visibility restored.');
+    }));
     for (const [label,to] of [['↑',index-1],['↓',index+1]]) {const button = action(label, () => reorderProject(index,to)); button.disabled = to<0 || to>=projects.length; button.setAttribute('aria-label',(label==='↑'?'Move earlier: ':'Move later: ') + project.name); move.append(button);}
     const handle=action('⠿',()=>{},'project-drag-handle');handle.setAttribute('aria-label','Drag to reorder: '+project.name);handle.title='Drag to reorder · Arrow keys move earlier or later';
     handle.addEventListener('keydown',event=>{
@@ -214,8 +223,8 @@ function reorderProject(from,to) {
  renderProjects();sendPreviews();notice(pendingProjectOrder?'Project order changed. Publish edits when ready.':'Project order restored.');
 }
 $('#publish-project-order').addEventListener('click',()=>{
- if(busy||!pendingProjectOrder)return;
- void run(async()=>{const ids=[...pendingProjectOrder];await post('/admin/api/projects',{action:'reorder',ids});publishedProjectOrder=ids;pendingProjectOrder=null;renderProjects();sendPreviews();notice('Project order published. Your website is updated.');});
+ if(busy||(!pendingProjectOrder&&!pendingVisibility.size))return;
+ void run(async()=>{const ids=projects.map(p=>p.id),visibility=[...pendingVisibility].map(([id,hidden])=>({id,hidden}));await post('/admin/api/projects',{action:'reorder',ids,visibility});publishedProjectOrder=ids;pendingProjectOrder=null;for(const v of visibility)publishedVisibility.set(v.id,v.hidden);pendingVisibility.clear();renderProjects();renderOverview();sendPreviews();notice('Project edits published. Your website is updated.');});
 });
 async function deleteProject(project) {
   if (busy || !await confirmAction('Delete “' + project.name + '”?','This permanently removes the project, its saved draft and its uploaded photos.', 'Delete project',true)) return;
@@ -555,7 +564,7 @@ $('#crop-dialog').addEventListener('close',()=>{
 
 for(const category of categories){for(const select of [$('#category-filter'),$('#project-form').elements.category]){const option=el('option',category);option.value=category;select.append(option);}}
 for(const [id,handler] of [['project-search',renderProjects],['project-filter',renderProjects],['category-filter',renderProjects],['media-search',renderMedia],['search',renderInquiries],['status-filter',renderInquiries]])$('#'+id).addEventListener(id.includes('search')?'input':'change',handler);
-addEventListener('beforeunload',event=>{if(dirty||busy||servicesAdmin.dirty||pendingProjectOrder){event.preventDefault();event.returnValue='';}});
+addEventListener('beforeunload',event=>{if(dirty||busy||servicesAdmin.dirty||pendingProjectOrder||pendingVisibility.size){event.preventDefault();event.returnValue='';}});
 openTab(location.hash.slice(1)||'overview');
 showLogin('Checking your session…');
 load(true).catch(error=>showLogin(error.status===401?'Sign in using a code sent to your administrator email.':error.message));

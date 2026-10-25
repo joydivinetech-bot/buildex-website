@@ -30,15 +30,15 @@ async function loadPhotos(){
   try{
     const response=await fetch('/api/projects',{signal:AbortSignal.timeout(8000)});if(!response.ok)throw Error();
     const projects=await response.json();
-    const published=projects.map(project=>album(project,(project.photos||[]).filter(p=>/^projects\/[a-z0-9-]+\.(jpg|png|webp)$/.test(p.key)).map(p=>({src:'/api/media?key='+encodeURIComponent(p.key)})))).filter(project=>project.photos.length);
-    if(published.length){items=published;document.querySelector('.portfolio-note').textContent='Completed Buildex projects — browse each album to see the whole project.';}
+    const published=projects.filter(project=>!project.hidden).map(project=>album(project,(project.photos||[]).filter(p=>/^projects\/[a-z0-9-]+\.(jpg|png|webp)$/.test(p.key)).map(p=>({src:'/api/media?key='+encodeURIComponent(p.key)})))).filter(project=>project.photos.length);
+    items=published;document.querySelector('.portfolio-note').textContent=published.length?'Completed Buildex projects — browse each album to see the whole project.':'Our completed projects will appear here soon.';
   }catch{document.querySelector('.portfolio-note').textContent='The project gallery is temporarily unavailable. Showing clearly labeled inspiration photos.';}
   render();
 }
 document.addEventListener('buildex-projects-preview',event=>{
   if(!document.body.dataset.adminPreview)return;
   const viewed=viewer.id;
-  items=event.detail.map(project=>album(project,(project.photos||[]).map(p=>({src:p.src})))).filter(project=>project.photos.length);
+  items=event.detail.filter(project=>!project.hidden).map(project=>album(project,(project.photos||[]).map(p=>({src:p.src})))).filter(project=>project.photos.length);
   filter='all';document.querySelectorAll('[data-media-filter]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.mediaFilter==='all')));
   document.querySelector('.portfolio-note').textContent='Private preview — includes your drafts and unpublished changes.';render();
   if(dialog.open){const project=items.find(project=>project.id===viewed);if(project)viewer.update(project);else dialog.close();}

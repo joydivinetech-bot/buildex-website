@@ -1,6 +1,7 @@
 const node=(tag,text,cls)=>{const element=document.createElement(tag);if(text)element.textContent=text;if(cls)element.className=cls;return element;};
 const photoSrc=image=>image.src||(document.body.hasAttribute('data-admin-preview')?'/admin/api/media?key=':'/api/media?key=')+encodeURIComponent(image.key);
 export function renderServices(services){
+ services=services.filter(service=>!service.hidden);
  const grid=document.querySelector('.page-services .service-grid');
  if(grid){
   grid.replaceChildren(...services.map((service,index)=>{

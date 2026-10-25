@@ -15,6 +15,7 @@ export async function saveServices(db,data){
   const ids=new Set();collection=[];
   for(const item of data.services){
    if(!item||typeof item.id!=='string'||!/^[a-zA-Z0-9-]{1,80}$/.test(item.id)||ids.has(item.id)||typeof item.name!=='string'||!item.name.trim()||item.name.length>150||typeof item.description!=='string'||item.description.length>3000||!['estimate','flooring'].includes(item.link))reject(400,'Check service names and descriptions.');
+   if(item.hidden!==undefined&&typeof item.hidden!=='boolean')reject(400,'Invalid service visibility.');
    ids.add(item.id);let image;
    if(item.image?.key){
     if(typeof item.image.key!=='string'||!/^projects\/[0-9a-f-]{36}\.(?:jpg|png|webp)$/.test(item.image.key))reject(400,'Choose an available service photo.');
@@ -26,7 +27,7 @@ export async function saveServices(db,data){
     if(!defaultServices.some(service=>service.image.src===item.image.src))reject(400,'Upload the service photo instead of linking an external image.');
     image={src:item.image.src,alt:typeof item.image.alt==='string'?item.image.alt.slice(0,200):item.name.trim()};
    }else reject(400,'Add a photo to every service.');
-   collection.push({id:item.id,name:item.name.trim(),description:item.description.trim(),image,link:item.link});
+   collection.push({id:item.id,name:item.name.trim(),description:item.description.trim(),image,link:item.link,hidden:!!item.hidden});
   }
  }
  const next={published:data.action==='publish'?collection:current.published,draft:data.action==='draft'?collection:null,version:current.version+1};

@@ -50,7 +50,7 @@ if (results) {
     const dialog=document.querySelector('#project-dialog'),viewer=albumViewer(dialog,{prefix:'project'});
     const albums=()=>{
       const privatePreview=!!document.body.dataset.adminPreview;
-      return (privatePreview?(previewProjects||[]):projects).map(project=>({
+      return (privatePreview?(previewProjects||[]):projects).filter(project=>!project.hidden).map(project=>({
         id:project.id,title:project.name,category:project.category,description:project.description,
         photos:(project.photos||[]).filter(photo=>privatePreview||/^projects\/[a-z0-9-]+\.(jpg|png|webp)$/.test(photo.key)).map(photo=>({src:privatePreview?photo.src:API+'/media?key='+encodeURIComponent(photo.key)}))
       })).filter(project=>project.photos.length);

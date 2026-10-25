@@ -266,6 +266,17 @@ try{
  }
  await page.reload();await page.locator('#project-collection').waitFor({state:'visible'});assert.equal(await page.locator('#project-list').getAttribute('data-view'),'list','View preference survives reload');
  await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:path.join(screenshots,'collection-list-mobile.png'),fullPage:true});
+
+ const liveBefore=await (await context.request.get(origin+'/api/projects')).json();assert.equal(liveBefore.length,1);
+ let hiddenCard=page.locator('#project-list .project-card').filter({hasText:'Private new project title'});
+ await hiddenCard.getByRole('button',{name:'Hide',exact:true}).click();assert(await hiddenCard.evaluate(card=>card.classList.contains('is-hidden')&&Number(getComputedStyle(card).opacity)<1));
+ assert.equal((await (await context.request.get(origin+'/api/projects')).json()).length,1,'Hide waits for Publish edits');
+ await page.locator('#publish-project-order').click();await page.locator('#publish-project-order').waitFor({state:'hidden'});assert.equal((await (await context.request.get(origin+'/api/projects')).json()).length,0);
+ assert.equal((await fetch(origin+'/api/media?key='+liveBefore[0].photos[0].key)).status,404);
+ await page.reload();await page.locator('#project-list .is-hidden').waitFor();hiddenCard=page.locator('#project-list .project-card').filter({hasText:'Private new project title'});
+ await page.screenshot({path:path.join(screenshots,'hidden-project-mobile.png'),fullPage:true});
+ await hiddenCard.getByRole('button',{name:'Unhide',exact:true}).click();assert.equal((await (await context.request.get(origin+'/api/projects')).json()).length,0,'Unhide also waits for Publish edits');
+ await page.locator('#publish-project-order').click();await page.locator('#publish-project-order').waitFor({state:'hidden'});assert.equal((await (await context.request.get(origin+'/api/projects')).json()).length,1);assert.equal(await hiddenCard.evaluate(card=>card.classList.contains('is-hidden')),false);
  assert.equal(fixture.sql.prepare('SELECT name FROM projects WHERE id=?').get(existingId).name,'Existing bathroom project','Existing projects are preserved');
  assert.deepEqual(errors.filter(error=>!error.includes('503')),[]);
  console.log('PASS: actual Worker + SQLite, upload, crop, inline lightbox, draft privacy, publish, all seven previews, preview navigation, recovery, empty-editor preview, desktop and mobile layout; no JS/CSP errors.');

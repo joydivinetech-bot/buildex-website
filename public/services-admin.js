@@ -13,14 +13,16 @@ export function initServices({api,post,run,confirmAction,notice,preview,openPhot
   const query=$('#service-search').value.toLowerCase();
   items.forEach((item,index)=>{
    if(query&&!item.name.toLowerCase().includes(query))return;
-   const card=el('article','','project-card');card.dataset.serviceId=item.id;
+   const card=el('article','','project-card');card.dataset.serviceId=item.id;card.classList.toggle('is-hidden',!!item.hidden);
    const image=el('div','','project-image');if(item.image){const img=el('img');img.src=imageURL(item.image);img.alt=item.name;image.append(img);}else image.append(el('span','▧'));
+   if(item.hidden)image.append(el('span','Hidden','badge hidden-project'));
    const copy=el('div','','project-content');copy.append(button(item.name||'Untitled service',()=>edit(item.id),'project-name'),el('p',item.description));
    const actions=el('div','','card-actions'),move=el('div','','move');actions.append(button('Edit service →',()=>edit(item.id)),button('Remove',async()=>{
     if(locked||!await confirmAction('Remove this service?','The removal stays private until you publish services.','Remove service',true))return;
     if(item.image?.blob)URL.revokeObjectURL(item.image.src);items=items.filter(s=>s.id!==item.id);if(selected===item.id)close();update();
    },'text-button danger-text'));
    for(const [label,to] of [['↑',index-1],['↓',index+1]]){const b=button(label,()=>reorder(index,to));b.disabled=to<0||to>=items.length;b.setAttribute('aria-label',(label==='↑'?'Move earlier: ':'Move later: ')+item.name);move.append(b);}
+   actions.append(button(item.hidden?'Unhide':'Hide',()=>{if(locked)return;item.hidden=!item.hidden;update();}));
    actions.append(move);copy.append(actions);
    const handle=button('⠿',()=>{},'project-drag-handle');handle.setAttribute('aria-label','Drag to reorder service: '+item.name);handle.title='Drag to reorder · Arrow keys move earlier or later';
    handle.addEventListener('keydown',e=>{const delta=['ArrowUp','ArrowLeft'].includes(e.key)?-1:['ArrowDown','ArrowRight'].includes(e.key)?1:0;if(delta){e.preventDefault();reorder(index,index+delta);}});

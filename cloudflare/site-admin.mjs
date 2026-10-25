@@ -13,6 +13,7 @@ const schemas=new WeakMap();
 async function ensure(db){
  let ready=schemas.get(db);
  if(!ready){ready=db.batch([
+ db.prepare('CREATE TABLE IF NOT EXISTS project_visibility (project_id TEXT PRIMARY KEY,hidden INTEGER NOT NULL DEFAULT 0)'),
  db.prepare('CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY,name TEXT NOT NULL,category TEXT NOT NULL,description TEXT NOT NULL,location TEXT NOT NULL,photos TEXT NOT NULL,updated_at INTEGER NOT NULL,status TEXT NOT NULL DEFAULT \'draft\',sort_order INTEGER NOT NULL DEFAULT 0)'),
  db.prepare('CREATE TABLE IF NOT EXISTS photos (key TEXT PRIMARY KEY,filename TEXT NOT NULL,mime TEXT NOT NULL,owner TEXT NOT NULL,project_id TEXT REFERENCES projects(id),created_at INTEGER NOT NULL)'),
  db.prepare('CREATE TABLE IF NOT EXISTS photo_data (key TEXT PRIMARY KEY,data TEXT NOT NULL)'),
@@ -21,9 +22,9 @@ async function ensure(db){
  ]);schemas.set(db,ready);ready.catch(()=>schemas.delete(db));}
  await ready;
 }
-const decodeProject=row=>{let photos=[];try{photos=JSON.parse(row.photos)||[];}catch{}return {...row,photos};};
+const decodeProject=row=>{let photos=[];try{photos=JSON.parse(row.photos)||[];}catch{}return {...row,hidden:!!row.hidden,photos};};
 async function projects(db,all=false){
- const result=await db.prepare("SELECT * FROM projects"+(all?'':" WHERE status='published'")+" ORDER BY sort_order,updated_at DESC").all();
+ const result=await db.prepare("SELECT projects.*,COALESCE(project_visibility.hidden,0) AS hidden FROM projects LEFT JOIN project_visibility ON project_visibility.project_id=projects.id"+(all?'':" WHERE status='published' AND COALESCE(project_visibility.hidden,0)=0")+" ORDER BY sort_order,updated_at DESC").all();
  const rows=result.results.map(decodeProject);
  if(!all)return rows;
  const drafts=(await db.prepare('SELECT * FROM project_drafts').all()).results;
@@ -49,14 +50,14 @@ async function readUpload(request,env,user){const type=request.headers.get('cont
 export async function handlePublicSite(request,env,ctx={}){
  try{
   await ensure(env.DB);const url=new URL(request.url);
-  if(url.pathname==='/api/services'&&request.method==='GET')return json((await serviceState(env.DB)).published);
+  if(url.pathname==='/api/services'&&request.method==='GET')return json((await serviceState(env.DB)).published.filter(service=>!service.hidden));
   if(url.pathname==='/api/projects'&&request.method==='GET')return json(await projects(env.DB));
   if(url.pathname==='/api/settings'&&request.method==='GET')return json(await settings(env.DB));
   if(url.pathname!=='/api/media'||!['GET','HEAD'].includes(request.method))fail(404,'Not found.');
   const key=url.searchParams.get('key')||'';
-  const photo=await env.DB.prepare('SELECT photos.*,projects.status,projects.photos AS public_photos FROM photos LEFT JOIN projects ON projects.id=photos.project_id WHERE photos.key=?').bind(key).first();
+  const photo=await env.DB.prepare('SELECT photos.*,projects.status,projects.photos AS public_photos,COALESCE(project_visibility.hidden,0) AS hidden FROM photos LEFT JOIN projects ON projects.id=photos.project_id LEFT JOIN project_visibility ON project_visibility.project_id=projects.id WHERE photos.key=?').bind(key).first();
   if(!photo)fail(404,'Photo not found.');
-  const visible=(photo.status==='published'&&JSON.parse(photo.public_photos||'[]').some(item=>item.key===key))||(!photo.project_id&&(await serviceState(env.DB)).published.some(service=>service.image?.key===key));
+  const visible=(photo.status==='published'&&!photo.hidden&&JSON.parse(photo.public_photos||'[]').some(item=>item.key===key))||(!photo.project_id&&(await serviceState(env.DB)).published.some(service=>!service.hidden&&service.image?.key===key));
   if(!visible){try{await verifyAdminSession(request,env);}catch{fail(404,'Photo not found.');}}
   // Validate publication before both browser revalidation and the edge cache.
   const etag='"'+photo.filename+'"';
@@ -93,8 +94,14 @@ export async function handleSiteAdmin(request,env,authorizer=verifyAdminSession)
  if(url.pathname==='/admin/api/projects/upload'&&request.method==='POST')return json(await readUpload(request,env,user),201);
  if(url.pathname==='/admin/api/settings'&&request.method==='POST'){const value=cleanSettings(await body(request));await env.DB.prepare('INSERT INTO settings(id,value) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value').bind('site',JSON.stringify(value)).run();return json({ok:true,settings:value});}
  if(url.pathname!=='/admin/api/projects'||request.method!=='POST')fail(404,'Not found.');const data=await body(request);
- if(data.action==='reorder'){const all=await projects(env.DB,true);if(!Array.isArray(data.ids)||data.ids.length!==all.length||new Set(data.ids).size!==all.length||data.ids.some(id=>!all.some(project=>project.id===id)))fail(400,'Invalid project order.');if(all.length)await env.DB.batch(data.ids.map((id,index)=>env.DB.prepare('UPDATE projects SET sort_order=? WHERE id=?').bind(index,id)));return json({ok:true});}
- if(data.action==='delete'){if(!validId(data.id))fail(400,'Invalid project.');const stored=(await env.DB.prepare('SELECT key FROM photos WHERE project_id=?').bind(data.id).all()).results;await env.DB.batch([...stored.map(photo=>env.DB.prepare('DELETE FROM photo_data WHERE key=?').bind(photo.key)),env.DB.prepare('DELETE FROM photos WHERE project_id=?').bind(data.id),env.DB.prepare('DELETE FROM project_drafts WHERE project_id=?').bind(data.id),env.DB.prepare('DELETE FROM projects WHERE id=?').bind(data.id)]);if(stored.length&&env.MEDIA)await env.MEDIA.delete(stored.map(photo=>photo.key));return json({ok:true});}
+ if(data.action==='reorder'){
+  const all=await projects(env.DB,true),visibility=data.visibility??[];
+  if(!Array.isArray(data.ids)||data.ids.length!==all.length||new Set(data.ids).size!==all.length||data.ids.some(id=>!all.some(project=>project.id===id)))fail(400,'Invalid project order.');
+  if(!Array.isArray(visibility)||new Set(visibility.map(v=>v?.id)).size!==visibility.length||visibility.some(v=>!v||typeof v.hidden!=='boolean'||!all.some(p=>p.id===v.id)))fail(400,'Invalid project visibility.');
+  const statements=[...data.ids.map((id,index)=>env.DB.prepare('UPDATE projects SET sort_order=? WHERE id=?').bind(index,id)),...visibility.map(v=>env.DB.prepare('INSERT INTO project_visibility(project_id,hidden) VALUES(?,?) ON CONFLICT(project_id) DO UPDATE SET hidden=excluded.hidden').bind(v.id,v.hidden?1:0))];
+  if(statements.length)await env.DB.batch(statements);return json({ok:true});
+ }
+ if(data.action==='delete'){if(!validId(data.id))fail(400,'Invalid project.');const stored=(await env.DB.prepare('SELECT key FROM photos WHERE project_id=?').bind(data.id).all()).results;await env.DB.batch([...stored.map(photo=>env.DB.prepare('DELETE FROM photo_data WHERE key=?').bind(photo.key)),env.DB.prepare('DELETE FROM photos WHERE project_id=?').bind(data.id),env.DB.prepare('DELETE FROM project_drafts WHERE project_id=?').bind(data.id),env.DB.prepare('DELETE FROM project_visibility WHERE project_id=?').bind(data.id),env.DB.prepare('DELETE FROM projects WHERE id=?').bind(data.id)]);if(stored.length&&env.MEDIA)await env.MEDIA.delete(stored.map(photo=>photo.key));return json({ok:true});}
 
  if(['discard','unpublish'].includes(data.action)){
   if(!validId(data.id))fail(400,'Invalid project.');

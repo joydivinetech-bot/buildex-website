@@ -15,10 +15,10 @@ export function cropRect(width, height, ratio, zoom = 1, x = .5, y = .5, maximum
 }
 export function previewCollection(projects, working) {
   const collection = projects.map(project => ({...project, photos: [...project.photos]}));
-  if (!working) return collection;
+  if (!working) return collection.filter(project=>!project.hidden);
   const index = collection.findIndex(project => project.id === working.id);
   if (index >= 0) collection[index] = working; else collection.push(working);
-  return collection;
+  return collection.filter(project=>!project.hidden);
 }
 export function previewPage(href, base) {
   const url = new URL(href, base);
