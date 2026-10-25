@@ -307,34 +307,66 @@ async function exportPhoto(source,rect,quality=.92) {
   return {blob,width:canvas.width,height:canvas.height,bytes:blob.size};
 }
 async function addPhotos(files) {
-  if(!working||!files.length||busy||importQueue)return;
-  if(working.photos.length+files.length>20){fail('A project can have up to 20 photos.');return;}
+  if(!working||!files.length||(busy&&!importQueue))return;
+  if(working.photos.length+(importQueue?.files.filter(f=>!importQueue.done.has(f)).length||0)+files.length>20){fail('A project can have up to 20 photos.');return;}
   for(const file of files){
     if(!['image/jpeg','image/png','image/webp'].includes(file.type)){fail(file.name+': use JPG, PNG or WebP.');return;}
     if(file.size>8000000){fail(file.name+': choose an original under 8 MB.');return;}
   }
-  importQueue={files,index:0,added:0,skipped:0};setBusy(true);await nextImportPhoto();
+  if(importQueue){importQueue.files.push(...files);renderImportSelection();return;}
+  importQueue={files,index:0,added:0,skipped:0,done:new Set(),states:new Map(),thumbs:new Map()};setBusy(true);await nextImportPhoto();
 }
 function finishImport(cancelled=false){
   const queue=importQueue;if(!queue)return;
   $('#upload-progress').textContent=queue.added+' photo'+(queue.added===1?'':'s')+' added to this project.'+(queue.skipped?' '+queue.skipped+' skipped.':'')+(cancelled?' Remaining selection cancelled.':'')+' Add more anytime; save draft when ready.';
+  for(const url of queue.thumbs.values())URL.revokeObjectURL(url);
+  $('#crop-selection').replaceChildren();$('#crop-selection').hidden=true;$('#crop-add').hidden=true;
   importQueue=null;setBusy(false);$('#photo-upload').focus();
 }
-async function nextImportPhoto(){
-  if(!importQueue)return;
-  while(importQueue.index<importQueue.files.length){
-    const file=importQueue.files[importQueue.index];
-    try{
-      const bitmap=await createImageBitmap(file);
-      crop={bitmap,original:file,rotation:0,flipX:1,flipY:1,result:null,importing:true};resetCrop();
-      $('#crop-title').textContent='Edit photo '+(importQueue.index+1)+' of '+importQueue.files.length;
-      $('#crop-file').textContent=file.name+' · Crop or rotate, then add to your project';
-      $('#skip-crop').hidden=false;$('#apply-crop').textContent=importQueue.index<importQueue.files.length-1?'Add photo & next':'Add photo';
-      $('#crop-dialog').returnValue='';$('#crop-dialog').showModal();await drawCrop();return;
-    }catch(error){fail('Could not open '+file.name+'. '+error.message);importQueue.index++;importQueue.skipped++;}
-  }
-  finishImport();
+const cropFields=['crop-ratio','crop-zoom','crop-x','crop-y','crop-size','crop-quality'];
+function rememberImportCrop(){
+  if(!crop?.importing||!importQueue)return;
+  importQueue.states.set(crop.original,{rotation:crop.rotation,flipX:crop.flipX,flipY:crop.flipY,values:cropFields.map(id=>$('#'+id).value),photo:crop.photo});
 }
+function renderImportSelection(){
+  const queue=importQueue,list=$('#crop-selection');list.replaceChildren();list.hidden=!queue;$('#crop-add').hidden=!queue;
+  if(!queue)return;
+  $('#crop-title').textContent='Edit photo '+(queue.index+1)+' of '+queue.files.length;
+  queue.files.forEach((file,index)=>{
+    let src=queue.thumbs.get(file);if(!src){src=URL.createObjectURL(file);queue.thumbs.set(file,src);}
+    const item=el('div','','crop-thumb'),choose=action('',()=>{rememberImportCrop();void nextImportPhoto(index);},'crop-thumb-select');
+    choose.setAttribute('aria-label','Edit '+file.name);choose.setAttribute('aria-pressed',String(index===queue.index));
+    const img=document.createElement('img');img.src=src;img.alt=file.name;choose.append(img);item.append(choose);
+    const remove=action('×',()=>{
+      rememberImportCrop();const photo=queue.states.get(file)?.photo;
+      if(photo){working.photos.splice(working.photos.indexOf(photo),1);queue.added--;renderPhotos();changed();}
+      queue.done.delete(file);queue.states.delete(file);queue.files.splice(index,1);URL.revokeObjectURL(src);queue.thumbs.delete(file);
+      if(!queue.files.length){$('#crop-dialog').close('empty');return;}
+      if(index===queue.index)void nextImportPhoto(Math.min(index,queue.files.length-1));
+      else{if(index<queue.index)queue.index--;renderImportSelection();$('#crop-title').textContent='Edit photo '+(queue.index+1)+' of '+queue.files.length;}
+    },'crop-thumb-remove');remove.setAttribute('aria-label','Remove '+file.name);item.append(remove);list.append(item);
+  });
+}
+async function nextImportPhoto(selected){
+  const queue=importQueue;if(!queue)return;
+  if(selected===undefined){const index=queue.files.findIndex(file=>!queue.done.has(file));if(index<0){finishImport();return;}queue.index=index;}
+  else queue.index=selected;
+  const file=queue.files[queue.index],loadToken=queue.loadToken=(queue.loadToken||0)+1;$('#apply-crop').disabled=true;
+  clearTimeout(cropTimer);cropGeneration++;crop?.bitmap.close();crop=null;$('#crop-dialog .crop-controls').inert=true;
+  try{
+    const bitmap=await createImageBitmap(file);
+    if(importQueue!==queue||queue.loadToken!==loadToken||queue.files[queue.index]!==file){bitmap.close();return;}
+    const state=queue.states.get(file);
+    crop={bitmap,original:file,rotation:0,flipX:1,flipY:1,result:null,importing:true,photo:state?.photo};resetCrop();
+    if(state){Object.assign(crop,{rotation:state.rotation,flipX:state.flipX,flipY:state.flipY});cropFields.forEach((id,i)=>$('#'+id).value=state.values[i]);}
+    $('#crop-title').textContent='Edit photo '+(queue.index+1)+' of '+queue.files.length;
+    $('#crop-file').textContent=file.name+' · Crop or rotate, then add to your project';
+    $('#skip-crop').hidden=false;$('#apply-crop').textContent=state?.photo?'Apply photo changes':queue.files.some(f=>f!==file&&!queue.done.has(f))?'Add photo & next':'Add photo';
+    $('#crop-dialog .crop-controls').inert=false;renderImportSelection();$('#crop-dialog').returnValue='';if(!$('#crop-dialog').open)$('#crop-dialog').showModal();await drawCrop();
+  }catch(error){fail('Could not open '+file.name+'. '+error.message);queue.done.add(file);queue.skipped++;await nextImportPhoto();}
+}
+$('#crop-add').addEventListener('click',()=>$('#crop-upload').click());
+$('#crop-upload').addEventListener('change',event=>{const files=[...event.target.files];event.target.value='';void addPhotos(files);});
 $('#photo-upload').addEventListener('change',event=>{const files=[...event.target.files];event.target.value='';void addPhotos(files);});
 $('#drop-zone').addEventListener('dragover',event=>{event.preventDefault();$('#drop-zone').classList.add('dragover');});
 $('#drop-zone').addEventListener('dragleave',()=>$('#drop-zone').classList.remove('dragover'));
@@ -431,7 +463,7 @@ async function openCrop(index) {
     const bitmap=await createImageBitmap(source);
     crop={photo,index,bitmap,original:source,rotation:0,flipX:1,flipY:1,result:null};
     $('#crop-title').textContent='Edit project photo';$('#crop-file').textContent='Crop, rotate or flip this photo';$('#skip-crop').hidden=true;$('#apply-crop').textContent='Apply photo changes';
-    resetCrop();$('#crop-dialog').showModal();await drawCrop();
+    $('#crop-selection').hidden=true;$('#crop-add').hidden=true;resetCrop();$('#crop-dialog').showModal();await drawCrop();
   });
 }
 function resetCrop() {
@@ -473,16 +505,18 @@ $('#apply-crop').addEventListener('click',()=>{
   if(!crop?.result||$('#apply-crop').disabled)return;
   const photo=crop.photo||{label:'Project photo',filename:crop.original.name},result=crop.result;delete photo.key;
   Object.assign(photo,result,{original:crop.original,src:objectURL(result.blob)});
-  if(crop.importing){working.photos.push(photo);selectedPhoto=working.photos.length-1;importQueue.added++;}
+  if(crop.importing){if(!crop.photo){working.photos.push(photo);importQueue.added++;}crop.photo=photo;selectedPhoto=working.photos.indexOf(photo);rememberImportCrop();}
   renderPhotos();changed();$('#crop-dialog').close('applied');
 });
 $('#close-crop').addEventListener('click',()=>$('#crop-dialog').close());
 $('#skip-crop').addEventListener('click',()=>$('#crop-dialog').close('skip'));
 $('#crop-dialog').addEventListener('close',()=>{
-  const importing=crop?.importing,value=$('#crop-dialog').returnValue;
+  const importing=Boolean(importQueue)||crop?.importing,value=$('#crop-dialog').returnValue;
+  $('#crop-dialog .crop-controls').inert=false;
+  rememberImportCrop();
   clearTimeout(cropTimer);cropGeneration++;crop?.bitmap.close();crop=null;pointer=null;
   if(importing&&importQueue){
-    if(value==='applied'||value==='skip'){if(value==='skip')importQueue.skipped++;importQueue.index++;void nextImportPhoto();}
+    if(value==='applied'||value==='skip'){if(value==='skip')importQueue.skipped++;importQueue.done.add(importQueue.files[importQueue.index]);void nextImportPhoto();}
     else finishImport(true);
   }
 });

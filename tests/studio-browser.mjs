@@ -64,6 +64,26 @@ try{
  await page.locator('#crop-dialog').waitFor({state:'visible'});
  assert.equal(await page.locator('.photo-card').count(),0,'Photo editor opens before importing photos');
  assert.equal(await page.locator('#crop-title').textContent(),'Edit photo 1 of 2');
+ assert.equal(await page.locator('#photo-upload').getAttribute('multiple'),'');
+ assert.equal(await page.locator('#crop-selection .crop-thumb').count(),2);
+ await page.locator('#crop-zoom').fill('1.2');
+ await page.locator('#crop-selection .crop-thumb-select').nth(1).click();
+ await page.waitForFunction(()=>document.querySelector('#crop-title').textContent==='Edit photo 2 of 2');
+ await page.locator('#crop-selection .crop-thumb-select').first().click();
+ await page.waitForFunction(()=>document.querySelector('#crop-title').textContent==='Edit photo 1 of 2');
+ assert.equal(await page.locator('#crop-zoom').inputValue(),'1.2','Switching thumbnails preserves crop controls');
+ const chooserPromise=page.waitForEvent('filechooser');await page.locator('#crop-add').click();
+ const chooser=await chooserPromise;assert.equal(chooser.isMultiple(),true);
+ await chooser.setFiles([{name:'Extra one.png',mimeType:'image/png',buffer:Buffer.from(image,'base64')},{name:'Extra two.png',mimeType:'image/png',buffer:Buffer.from(image,'base64')}]);
+ await page.waitForFunction(()=>document.querySelectorAll('#crop-selection .crop-thumb').length===4);
+ await page.locator('#crop-selection .crop-thumb-remove').last().click();
+ await page.locator('#crop-selection .crop-thumb-select').last().click();
+ await page.waitForFunction(()=>document.querySelector('#crop-title').textContent==='Edit photo 3 of 3');
+ await page.locator('#crop-selection .crop-thumb-remove').last().click();
+ await page.waitForFunction(()=>document.querySelector('#crop-title').textContent==='Edit photo 2 of 2');
+ await page.locator('#crop-selection .crop-thumb-select').first().click();
+ await page.waitForFunction(()=>document.querySelector('#crop-title').textContent==='Edit photo 1 of 2');
+
  assert.equal(await page.locator('#crop-size').inputValue(),'2560');assert.equal(await page.locator('#crop-quality').inputValue(),'0.92','High quality is the default');
  await page.locator('#crop-rotate').click();await page.locator('#crop-rotate-left').click();
  await page.locator('#crop-flip').click();await page.locator('#crop-flip').click();
