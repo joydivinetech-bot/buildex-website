@@ -128,7 +128,7 @@ try{
  await carousel.locator('.album-dot').first().click();
  const cycleStart=Date.now();
  await layoutPage.waitForFunction(()=>{const root=document.querySelector('.album-carousel');return root.dataset.photoIndex==='0'&&Number(root.dataset.progress)>.2&&Number(root.dataset.progress)<.8;},null,{timeout:2500});
- assert.match(await carousel.locator('.album-dot').first().evaluate(dot=>getComputedStyle(dot,'::after').backgroundImage),/conic-gradient/,'The active dot visibly fills');
+ assert.match(await carousel.locator('.album-dot').first().evaluate(dot=>getComputedStyle(dot,'::after').backgroundImage),/linear-gradient/,'The active indicator fills as a straight bar');
  await layoutPage.waitForFunction(()=>document.querySelector('.album-carousel').dataset.photoIndex==='1',null,{timeout:4500});
  assert(Date.now()-cycleStart>=2800&&Date.now()-cycleStart<4500,'Each photo advances after three seconds');
  for(const next of ['2','3','0'])await layoutPage.waitForFunction(next=>document.querySelector('.album-carousel').dataset.photoIndex===next,next,{timeout:4500});
